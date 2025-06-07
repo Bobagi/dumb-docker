@@ -1,7 +1,7 @@
 # Dumb Docker
 
-This repo contains a simple Next.js frontend with a Node.js backend container. The frontend proxies API
-requests to the backend using an internal environment variable.
+This repo contains a simple Next.js frontend with a FastAPI backend container. The frontend proxies API
+requests to the backend using an internal environment variable so it can access the Docker data.
 
 ## Environment Variables
 
@@ -29,4 +29,4 @@ Run the application with Docker Compose. The first time you run it, include the
 docker-compose up --build
 ```
 
-This starts the frontend on port `3000` and the Node.js backend on port `8000`.
+This starts the frontend on port `3000` and the FastAPI backend on port `8000`.
