@@ -13,6 +13,6 @@ services:
     depends_on:
       - backend
   backend:
-    image: backend:latest
+    build: ./backend
     ports:
       - "8000:8000"

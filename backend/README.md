@@ -1,11 +1,10 @@
 # Backend
 
-FastAPI backend that exposes `/api/containers` listing docker containers.
+Simple Express server exposing `/api/containers` with fake container data.
 
 Run locally:
 
 ```bash
-pip install -r requirements.txt
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+npm install
+node server.js
 ```
-
