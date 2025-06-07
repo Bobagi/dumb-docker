@@ -1,27 +1,19 @@
 import { useEffect, useState } from 'react';
-import ReactFlow, { Background } from 'reactflow';
-import 'reactflow/dist/style.css';
 
 export default function Home() {
-  const [nodes, setNodes] = useState([]);
+  const [containers, setContainers] = useState([]);
 
   useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch('http://localhost:8000/api/containers');
-        const data = await res.json();
-        const mapped = data.map((c, i) => ({
-          id: c.id,
-          position: { x: 0, y: i * 80 },
-          data: { label: `${c.name} (${c.status})` }
-        }));
-        setNodes(mapped);
-      } catch (err) {
-        console.error(err);
-      }
-    }
-    load();
+    fetch('/api/containers')
+      .then((res) => res.json())
+      .then(setContainers)
+      .catch((err) => console.error('Failed to fetch containers', err));
   }, []);
 
-  return <div style={{ height: '100vh' }}><ReactFlow nodes={nodes}><Background /></ReactFlow></div>;
+  return (
+    <div>
+      <h1>Containers</h1>
+      <pre>{JSON.stringify(containers, null, 2)}</pre>
+    </div>
+  );
 }
