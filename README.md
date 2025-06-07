@@ -12,6 +12,14 @@ requests to the backend using an internal environment variable.
 If you are running in GitHub Codespaces, ensure this variable is set in your devcontainer or compose
 configuration so the API proxy works correctly.
 
+## Setup
+
+Before starting the containers, install the frontend dependencies. The compose file mounts the source and runs `npm run dev`, so the packages must be installed. Docker Compose will install them automatically, but doing it manually first speeds up the initial boot.
+
+```bash
+cd frontend && npm install
+```
+
 ## Development
 
 Run the application with Docker Compose. The first time you run it, include the
