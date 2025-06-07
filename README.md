@@ -14,7 +14,7 @@ configuration so the API proxy works correctly.
 
 ## Setup
 
-Before starting the containers, install the frontend dependencies. The compose file mounts the source and runs `npm run dev`, so the packages must be installed locally first.
+Before starting the containers, install the frontend dependencies. The compose file mounts the source and runs `npm run dev`, so the packages must be installed. Docker Compose will install them automatically, but doing it manually first speeds up the initial boot.
 
 ```bash
 cd frontend && npm install
