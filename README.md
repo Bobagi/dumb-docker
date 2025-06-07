@@ -16,4 +16,5 @@ docker-compose up --build
 Then access http://localhost:3000 to view the dashboard.
 
 The repository keeps the frontend lock file out of version control to avoid
-large diffs. The Docker build runs `npm install` during the image build.
+large diffs. The Docker build runs `npm install` during the image build so
+Next.js has all dev dependencies available for ESLint and Tailwind.
