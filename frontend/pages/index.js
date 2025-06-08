@@ -40,10 +40,15 @@ function ContainerNode({ data }) {
       ? 'bg-red-500'
       : 'bg-gray-400';
   return (
-    <div className="bg-white border rounded shadow p-2 w-48 text-sm">
+    <div className="bg-white border rounded shadow p-2 w-48 text-sm text-black">
       <DockerIcon className="w-full h-16 object-contain mb-2" />
       <div className="flex items-center justify-between mb-1">
-        <span className="font-semibold truncate" title={data.name}>{data.name}</span>
+        <span
+          className="font-semibold truncate text-black"
+          title={data.name}
+        >
+          {data.name}
+        </span>
         <span className={`w-3 h-3 rounded-full ${color}`}></span>
       </div>
       <div className="text-xs text-gray-600 mb-2 truncate" title={data.image}>{data.image}</div>
