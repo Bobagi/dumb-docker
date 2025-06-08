@@ -1,26 +1,57 @@
-import { getCsrfToken } from 'next-auth/react';
+import { signIn, getSession } from 'next-auth/react';
+import { useState } from 'react';
 
 export async function getServerSideProps(context) {
-  const csrfToken = await getCsrfToken(context);
-  const { error } = context.query;
-  return { props: { csrfToken, error: error ?? null } };
+  const session = await getSession(context);
+  if (session) {
+    return { redirect: { destination: '/', permanent: false } };
+  }
+  return { props: {} };
 }
 
-export default function Login({ csrfToken, error }) {
-  const errorMessage = error ? 'Invalid email or password' : null;
+export default function Login() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState(null);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const res = await signIn('credentials', {
+      redirect: false,
+      email,
+      password,
+    });
+    if (res?.error) {
+      setError('Invalid email or password');
+    } else {
+      window.location.href = '/';
+    }
+  };
+
   return (
     <div className="flex items-center justify-center h-screen">
-      <form method="post" action="/api/auth/callback/credentials" className="bg-white p-4 shadow rounded flex flex-col gap-2 w-64">
-        <input name="csrfToken" type="hidden" defaultValue={csrfToken} />
+      <form onSubmit={handleSubmit} className="bg-white p-4 shadow rounded flex flex-col gap-2 w-64">
         <label className="flex flex-col text-sm text-black">
           Email
-          <input name="email" type="email" className="border rounded p-1 text-black" />
+          <input
+            name="email"
+            type="email"
+            className="border rounded p-1 text-black"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
         </label>
         <label className="flex flex-col text-sm text-black">
           Password
-          <input name="password" type="password" className="border rounded p-1 text-black" />
+          <input
+            name="password"
+            type="password"
+            className="border rounded p-1 text-black"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
         </label>
-        {errorMessage && <p className="text-red-500 text-sm">{errorMessage}</p>}
+        {error && <p className="text-red-500 text-sm">{error}</p>}
         <button type="submit" className="bg-blue-500 text-white rounded p-1 mt-2">Sign in</button>
       </form>
     </div>
