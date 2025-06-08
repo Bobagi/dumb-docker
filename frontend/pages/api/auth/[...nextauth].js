@@ -13,11 +13,17 @@ export const authOptions = {
       async authorize(credentials) {
         const adminUsername = process.env.ADMIN_USERNAME;
         const adminHash = process.env.ADMIN_PASSWORD_HASH;
+        const adminPassword = process.env.ADMIN_PASSWORD;
         if (!credentials?.username || !credentials.password) return null;
         if (credentials.username !== adminUsername) return null;
-        if (!adminHash) return null;
-        const ok = await bcrypt.compare(credentials.password, adminHash);
-        if (!ok) return null;
+        if (adminHash) {
+          const ok = await bcrypt.compare(credentials.password, adminHash);
+          if (!ok) return null;
+        } else if (adminPassword) {
+          if (credentials.password !== adminPassword) return null;
+        } else {
+          return null;
+        }
         return { id: 'admin', name: adminUsername };
       },
     }),
