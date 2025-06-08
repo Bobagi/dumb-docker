@@ -10,11 +10,11 @@ services:
     environment:
       - BACKEND_URL=http://backend:8000
     ports:
-      - "3100:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
 
   backend:
     build: ./backend
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      - "8100:8000"
+      - "${BACKEND_PORT:-8000}:8000"
