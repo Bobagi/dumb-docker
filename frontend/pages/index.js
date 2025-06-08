@@ -41,10 +41,10 @@ function ContainerNode({ data }) {
       : 'bg-gray-400';
   return (
     <div className="relative">
-      <div className="bg-white border rounded shadow p-2 w-48 text-sm">
+      <div className="bg-white border-2 rounded shadow p-2 w-48 text-sm">
         <DockerIcon className="w-full h-16 object-contain mb-2" />
         <div className="mb-1">
-          <span className="font-semibold truncate" title={data.name}>{data.name}</span>
+          <span className="font-semibold truncate text-black" title={data.name}>{data.name}</span>
         </div>
         <div className="text-xs text-gray-600 mb-2 truncate" title={data.image}>{data.image}</div>
         <div className="flex gap-1 justify-end">
