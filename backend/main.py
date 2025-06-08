@@ -21,7 +21,8 @@ def get_containers():
             "id": c.id,
             "name": c.name,
             "status": c.status,
-            "image": c.image.tags[0] if c.image.tags else ""
+            "image": c.image.tags[0] if c.image.tags else "",
+            "project": c.labels.get("com.docker.compose.project"),
         })
     return result
 
