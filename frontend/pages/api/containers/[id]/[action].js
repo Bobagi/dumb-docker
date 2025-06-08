@@ -1,10 +1,15 @@
+import fs from 'fs';
+
 export default async function handler(req, res) {
   const { id, action } = req.query;
   const port = process.env.BACKEND_PORT || '8000';
   const devUrl = `http://localhost:${port}`;
+  const inDocker = fs.existsSync('/.dockerenv');
   const backendUrl =
     process.env.BACKEND_URL ||
-    (process.env.NODE_ENV === 'development' ? devUrl : 'http://backend:8000');
+    (!inDocker && process.env.NODE_ENV === 'development'
+      ? devUrl
+      : 'http://backend:8000');
   const url = `${backendUrl}/api/containers/${id}/${action}`;
   try {
     const response = await fetch(url, { method: req.method });
