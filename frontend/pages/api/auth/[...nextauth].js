@@ -1,6 +1,6 @@
 import NextAuth from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 
 export const authOptions = {
   providers: [
@@ -12,13 +12,16 @@ export const authOptions = {
       },
       async authorize(credentials) {
         const adminUsername = process.env.ADMIN_USERNAME;
-        const adminHash = process.env.ADMIN_PASSWORD_HASH;
+        const adminHash = process.env.ADMIN_PASSWORD_SHA256;
         const adminPassword = process.env.ADMIN_PASSWORD;
         if (!credentials?.username || !credentials.password) return null;
         if (credentials.username !== adminUsername) return null;
         if (adminHash) {
-          const ok = await bcrypt.compare(credentials.password, adminHash);
-          if (!ok) return null;
+          const inputHash = crypto
+            .createHash('sha256')
+            .update(credentials.password)
+            .digest('hex');
+          if (inputHash !== adminHash) return null;
         } else if (adminPassword) {
           if (credentials.password !== adminPassword) return null;
         } else {
