@@ -40,10 +40,15 @@ function ContainerNode({ data }) {
       ? 'bg-red-500'
       : 'bg-gray-400';
   return (
-    <div className="bg-white border rounded shadow p-2 w-48 text-sm">
+    <div className="bg-white border rounded shadow p-2 w-48 text-sm text-black">
       <DockerIcon className="w-full h-16 object-contain mb-2" />
       <div className="flex items-center justify-between mb-1">
-        <span className="font-semibold truncate" title={data.name}>{data.name}</span>
+        <span
+          className="font-semibold truncate text-black"
+          title={data.name}
+        >
+          {data.name}
+        </span>
         <span className={`w-3 h-3 rounded-full ${color}`}></span>
       </div>
       <div className="text-xs text-gray-600 mb-2 truncate" title={data.image}>{data.image}</div>
@@ -57,6 +62,7 @@ function ContainerNode({ data }) {
 
 export default function Home() {
   const [nodes, setNodes] = useState([]);
+  const [edges, setEdges] = useState([]);
 
   const fetchContainers = useCallback(async () => {
     try {
@@ -65,7 +71,8 @@ export default function Home() {
       const mapped = data.map((c, i) => ({
         id: c.id,
         type: 'container',
-        position: { x: 0, y: i * 180 },
+        // offset nodes so the first card isn't flush against the canvas edges
+        position: { x: 40, y: 40 + i * 180 },
         data: {
           ...c,
           onRestart: async () => {
@@ -78,7 +85,28 @@ export default function Home() {
           },
         },
       }));
+
+      const groups = {};
+      data.forEach((c) => {
+        const key = c.project || 'default';
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(c.id);
+      });
+
+      const generatedEdges = [];
+      Object.values(groups).forEach((ids) => {
+        for (let i = 0; i < ids.length - 1; i++) {
+          generatedEdges.push({
+            id: `${ids[i]}-${ids[i + 1]}`,
+            source: ids[i],
+            target: ids[i + 1],
+            style: { stroke: '#ffd500' },
+          });
+        }
+      });
+
       setNodes(mapped);
+      setEdges(generatedEdges);
     } catch (err) {
       console.error(err);
     }
@@ -89,8 +117,8 @@ export default function Home() {
   }, [fetchContainers]);
 
   return (
-    <div style={{ height: '100vh' }}>
-      <ReactFlow nodes={nodes} edges={[]} nodeTypes={{ container: ContainerNode }}>
+    <div className="h-screen">
+      <ReactFlow nodes={nodes} edges={edges} nodeTypes={{ container: ContainerNode }}>
         <Background />
       </ReactFlow>
     </div>

@@ -1,13 +1,9 @@
 # Dumb Docker
 
-This repo contains a simple Next.js frontend with a FastAPI backend container. The frontend proxies API
-requests to the backend using an internal environment variable so it can access the Docker data.
+This repo contains a simple Next.js frontend with a FastAPI backend container. The frontend automatically
+proxies API requests to the backend so it can access the Docker data.
 
 ## Environment Variables
-
-- `BACKEND_URL` – address of the backend API. Defaults to `http://backend:8000` when not set.
-  `docker-compose.yml` sets this to the backend service so the frontend can access the API in
-  development.
 - `FRONTEND_PORT` – host port to expose the frontend. Defaults to `3000`.
 - `BACKEND_PORT` – host port to expose the backend API. Defaults to `8000`.
 
@@ -19,8 +15,7 @@ BACKEND_PORT=8000
 ```
 The Compose CLI automatically loads variables from this file.
 
-If you are running in GitHub Codespaces, ensure this variable is set in your devcontainer or compose
-configuration so the API proxy works correctly.
+If you are running in GitHub Codespaces, make sure these ports are forwarded in your devcontainer or compose configuration so the API proxy works correctly.
 
 ## Setup
 
