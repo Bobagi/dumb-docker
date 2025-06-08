@@ -7,18 +7,18 @@ export const authOptions = {
     CredentialsProvider({
       name: 'Credentials',
       credentials: {
-        email: { label: 'Email', type: 'email', placeholder: 'admin@example.com' },
+        username: { label: 'Username', type: 'text', placeholder: 'admin' },
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
-        const adminEmail = process.env.ADMIN_EMAIL;
+        const adminUser = process.env.ADMIN_USERNAME;
         const adminHash = process.env.ADMIN_PASSWORD_HASH;
-        if (!credentials?.email || !credentials.password) return null;
-        if (credentials.email !== adminEmail) return null;
+        if (!credentials?.username || !credentials.password) return null;
+        if (credentials.username !== adminUser) return null;
         if (!adminHash) return null;
         const ok = await bcrypt.compare(credentials.password, adminHash);
         if (!ok) return null;
-        return { id: 'admin', email: adminEmail };
+        return { id: 'admin', name: adminUser };
       },
     }),
   ],
