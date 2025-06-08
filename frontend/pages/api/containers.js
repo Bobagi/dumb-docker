@@ -1,6 +1,12 @@
 import fs from 'fs';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from './auth/[...nextauth]';
 
 export default async function handler(req, res) {
+  const session = await getServerSession(req, res, authOptions);
+  if (!session) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   const port = process.env.BACKEND_PORT || '8000';
   const devUrl = `http://localhost:${port}`;
   const inDocker = fs.existsSync('/.dockerenv');

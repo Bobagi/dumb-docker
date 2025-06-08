@@ -1,3 +1,4 @@
+import { getSession } from "next-auth/react";
 import { useEffect, useState, useCallback } from 'react';
 import ReactFlow, { Background } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -164,4 +165,14 @@ export default function Home() {
       </ReactFlow>
     </div>
   );
+}
+
+export async function getServerSideProps(context) {
+  const session = await getSession(context);
+  if (!session) {
+    return {
+      redirect: { destination: '/login', permanent: false },
+    };
+  }
+  return { props: {} };
 }
