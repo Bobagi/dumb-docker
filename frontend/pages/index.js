@@ -59,6 +59,7 @@ function ContainerNode({ data }) {
 
 export default function Home() {
   const [nodes, setNodes] = useState([]);
+  const [edges, setEdges] = useState([]);
 
   const fetchContainers = useCallback(async () => {
     try {
@@ -67,7 +68,8 @@ export default function Home() {
       const mapped = data.map((c, i) => ({
         id: c.id,
         type: 'container',
-        position: { x: 0, y: i * 180 },
+        // offset nodes so the first card isn't flush against the canvas edges
+        position: { x: 40, y: 40 + i * 180 },
         data: {
           ...c,
           onRestart: async () => {
@@ -80,7 +82,28 @@ export default function Home() {
           },
         },
       }));
+
+      const groups = {};
+      data.forEach((c) => {
+        const key = c.project || 'default';
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(c.id);
+      });
+
+      const generatedEdges = [];
+      Object.values(groups).forEach((ids) => {
+        for (let i = 0; i < ids.length - 1; i++) {
+          generatedEdges.push({
+            id: `${ids[i]}-${ids[i + 1]}`,
+            source: ids[i],
+            target: ids[i + 1],
+            style: { stroke: '#ffd500' },
+          });
+        }
+      });
+
       setNodes(mapped);
+      setEdges(generatedEdges);
     } catch (err) {
       console.error(err);
     }
@@ -91,8 +114,8 @@ export default function Home() {
   }, [fetchContainers]);
 
   return (
-    <div style={{ height: '100vh' }}>
-      <ReactFlow nodes={nodes} edges={[]} nodeTypes={{ container: ContainerNode }}>
+    <div className="h-screen">
+      <ReactFlow nodes={nodes} edges={edges} nodeTypes={{ container: ContainerNode }}>
         <Background />
       </ReactFlow>
     </div>
