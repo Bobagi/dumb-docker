@@ -6,6 +6,8 @@ proxies API requests to the backend so it can access the Docker data.
 ## Environment Variables
 - `FRONTEND_PORT` – host port to expose the frontend. Defaults to `3000`.
 - `BACKEND_PORT` – host port to expose the backend API. Defaults to `8000`.
+- `BACKEND_URL` – address of the backend API when running the frontend
+  outside Docker Compose.
 
 Create a `.env` file in the project root to override these ports:
 
@@ -40,3 +42,10 @@ docker-compose up --build
 
 This starts the frontend on the port defined in `FRONTEND_PORT` (default `3000`)
 and the FastAPI backend on the port defined in `BACKEND_PORT` (default `8000`).
+
+If you run the Next.js app without Docker Compose, set `BACKEND_URL` so the API
+routes know where to proxy requests, for example:
+
+```bash
+BACKEND_URL=http://localhost:8000 npm run dev
+```
