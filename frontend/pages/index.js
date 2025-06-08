@@ -40,17 +40,19 @@ function ContainerNode({ data }) {
       ? 'bg-red-500'
       : 'bg-gray-400';
   return (
-    <div className="bg-white border rounded shadow p-2 w-48 text-sm">
-      <DockerIcon className="w-full h-16 object-contain mb-2" />
-      <div className="flex items-center justify-between mb-1">
-        <span className="font-semibold truncate" title={data.name}>{data.name}</span>
-        <span className={`w-3 h-3 rounded-full ${color}`}></span>
+    <div className="relative">
+      <div className="bg-white border rounded shadow p-2 w-48 text-sm">
+        <DockerIcon className="w-full h-16 object-contain mb-2" />
+        <div className="mb-1">
+          <span className="font-semibold truncate" title={data.name}>{data.name}</span>
+        </div>
+        <div className="text-xs text-gray-600 mb-2 truncate" title={data.image}>{data.image}</div>
+        <div className="flex gap-1 justify-end">
+          <button onClick={data.onRestart} className="bg-blue-500 text-white rounded px-2 py-1 text-xs">Restart</button>
+          <button onClick={data.onStop} className="bg-red-500 text-white rounded px-2 py-1 text-xs">Stop</button>
+        </div>
       </div>
-      <div className="text-xs text-gray-600 mb-2 truncate" title={data.image}>{data.image}</div>
-      <div className="flex gap-1 justify-end">
-        <button onClick={data.onRestart} className="bg-blue-500 text-white rounded px-2 py-1 text-xs">Restart</button>
-        <button onClick={data.onStop} className="bg-red-500 text-white rounded px-2 py-1 text-xs">Stop</button>
-      </div>
+      <span className={`absolute top-2 right-2 w-3 h-3 rounded-full ${color}`}></span>
     </div>
   );
 }
