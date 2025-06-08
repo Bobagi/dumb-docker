@@ -10,7 +10,7 @@ export async function getServerSideProps(context) {
 }
 
 export default function Login() {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
 
@@ -18,11 +18,11 @@ export default function Login() {
     e.preventDefault();
     const res = await signIn('credentials', {
       redirect: false,
-      email,
+      username,
       password,
     });
     if (res?.error) {
-      setError('Invalid email or password');
+      setError('Invalid username or password');
     } else {
       window.location.href = '/';
     }
@@ -32,13 +32,13 @@ export default function Login() {
     <div className="flex items-center justify-center h-screen">
       <form onSubmit={handleSubmit} className="bg-white p-4 shadow rounded flex flex-col gap-2 w-64">
         <label className="flex flex-col text-sm text-black">
-          Email
+          Username
           <input
-            name="email"
-            type="email"
+            name="username"
+            type="text"
             className="border rounded p-1 text-black"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
           />
         </label>
         <label className="flex flex-col text-sm text-black">
