@@ -20,6 +20,10 @@ Before starting the containers, install the frontend dependencies. The compose f
 cd frontend && npm install
 ```
 
+This is required because `docker-compose.yml` mounts the frontend source and
+executes `npm run dev`. The dev server fails to start if `node_modules` is
+missing.
+
 ## Development
 
 Run the application with Docker Compose. The first time you run it, include the

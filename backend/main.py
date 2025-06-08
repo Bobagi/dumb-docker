@@ -21,6 +21,20 @@ def get_containers():
             "id": c.id,
             "name": c.name,
             "status": c.status,
-            "image": c.image.tags
+            "image": c.image.tags[0] if c.image.tags else ""
         })
     return result
+
+
+@app.post("/api/containers/{container_id}/restart")
+def restart_container(container_id: str):
+    container = client.containers.get(container_id)
+    container.restart()
+    return {"result": "restarted"}
+
+
+@app.post("/api/containers/{container_id}/stop")
+def stop_container(container_id: str):
+    container = client.containers.get(container_id)
+    container.stop()
+    return {"result": "stopped"}
