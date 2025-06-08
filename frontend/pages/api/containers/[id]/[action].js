@@ -4,7 +4,13 @@ export default async function handler(req, res) {
   const url = `${backendUrl}/api/containers/${id}/${action}`;
   try {
     const response = await fetch(url, { method: req.method });
-    const data = await response.json();
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { error: text };
+    }
     res.status(response.status).json(data);
   } catch (err) {
     console.error('Proxy error:', err);

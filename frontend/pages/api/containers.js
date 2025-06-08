@@ -8,7 +8,13 @@ export default async function handler(req, res) {
       },
       body: req.method !== 'GET' ? JSON.stringify(req.body) : undefined,
     });
-    const data = await response.json();
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { error: text };
+    }
     res.status(response.status).json(data);
   } catch (err) {
     console.error('Proxy error:', err);

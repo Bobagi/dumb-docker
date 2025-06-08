@@ -48,9 +48,24 @@ function ContainerNode({ data }) {
         </div>
         <div className="text-xs text-gray-600 mb-2 truncate" title={data.image}>{data.image}</div>
         <div className="flex gap-1 justify-end">
-          <button onClick={data.onRestart} className="bg-blue-500 text-white rounded px-2 py-1 text-xs">Restart</button>
-          <button onClick={data.onStop} className="bg-red-500 text-white rounded px-2 py-1 text-xs">Stop</button>
+          <button
+            onClick={data.onRestart}
+            disabled={data.loadingAction === 'restart'}
+            className="bg-blue-500 disabled:opacity-50 text-white rounded px-2 py-1 text-xs"
+          >
+            {data.loadingAction === 'restart' ? 'Restarting...' : 'Restart'}
+          </button>
+          <button
+            onClick={data.onStop}
+            disabled={data.loadingAction === 'stop'}
+            className="bg-red-500 disabled:opacity-50 text-white rounded px-2 py-1 text-xs"
+          >
+            {data.loadingAction === 'stop' ? 'Stopping...' : 'Stop'}
+          </button>
         </div>
+        {data.error && (
+          <div className="text-red-500 text-xs mt-1 break-all">{data.error}</div>
+        )}
       </div>
       <span className={`absolute top-2 right-2 w-3 h-3 rounded-full ${color}`}></span>
     </div>
@@ -60,6 +75,14 @@ function ContainerNode({ data }) {
 export default function Home() {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
+  const [actionState, setActionState] = useState({});
+
+  const updateActionState = useCallback((id, newState) => {
+    setActionState((prev) => ({
+      ...prev,
+      [id]: { ...prev[id], ...newState },
+    }));
+  }, []);
 
   const fetchContainers = useCallback(async () => {
     try {
@@ -72,14 +95,10 @@ export default function Home() {
         position: { x: 40, y: 40 + i * 180 },
         data: {
           ...c,
-          onRestart: async () => {
-            await fetch(`/api/containers/${c.id}/restart`, { method: 'POST' });
-            fetchContainers();
-          },
-          onStop: async () => {
-            await fetch(`/api/containers/${c.id}/stop`, { method: 'POST' });
-            fetchContainers();
-          },
+          onRestart: () => handleAction(c.id, 'restart'),
+          onStop: () => handleAction(c.id, 'stop'),
+          loadingAction: actionState[c.id]?.loadingAction,
+          error: actionState[c.id]?.error,
         },
       }));
 
@@ -107,7 +126,32 @@ export default function Home() {
     } catch (err) {
       console.error(err);
     }
-  }, []);
+  }, [actionState]);
+
+  const handleAction = useCallback(
+    async (id, action) => {
+      updateActionState(id, { loadingAction: action, error: null });
+      try {
+        const res = await fetch(`/api/containers/${id}/${action}`, {
+          method: 'POST',
+        });
+        if (!res.ok) {
+          let msg = res.statusText;
+          try {
+            const data = await res.json();
+            msg = data.error || JSON.stringify(data);
+          } catch {}
+          updateActionState(id, { loadingAction: null, error: msg });
+          return;
+        }
+        updateActionState(id, { loadingAction: null, error: null });
+        fetchContainers();
+      } catch (err) {
+        updateActionState(id, { loadingAction: null, error: err.message });
+      }
+    },
+    [fetchContainers, updateActionState]
+  );
 
   useEffect(() => {
     fetchContainers();
