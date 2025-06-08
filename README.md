@@ -8,6 +8,16 @@ requests to the backend using an internal environment variable so it can access 
 - `BACKEND_URL` – address of the backend API. Defaults to `http://backend:8000` when not set.
   `docker-compose.yml` sets this to the backend service so the frontend can access the API in
   development.
+- `FRONTEND_PORT` – host port to expose the frontend. Defaults to `3000`.
+- `BACKEND_PORT` – host port to expose the backend API. Defaults to `8000`.
+
+Create a `.env` file in the project root to override these ports:
+
+```bash
+FRONTEND_PORT=3000
+BACKEND_PORT=8000
+```
+The Compose CLI automatically loads variables from this file.
 
 If you are running in GitHub Codespaces, ensure this variable is set in your devcontainer or compose
 configuration so the API proxy works correctly.
@@ -33,4 +43,5 @@ Run the application with Docker Compose. The first time you run it, include the
 docker-compose up --build
 ```
 
-This starts the frontend on port `3000` and the FastAPI backend on port `8000`.
+This starts the frontend on the port defined in `FRONTEND_PORT` (default `3000`)
+and the FastAPI backend on the port defined in `BACKEND_PORT` (default `8000`).
