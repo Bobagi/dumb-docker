@@ -7,23 +7,27 @@ export const authOptions = {
     CredentialsProvider({
       name: 'Credentials',
       credentials: {
-        username: { label: 'Username', type: 'text', placeholder: 'admin' },
+        email: { label: 'Email', type: 'text', placeholder: 'admin@example.com' },
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
-        const adminUser = process.env.ADMIN_USERNAME;
+        const adminEmail = process.env.ADMIN_EMAIL;
         const adminHash = process.env.ADMIN_PASSWORD_HASH;
-        if (!credentials?.username || !credentials.password) return null;
-        if (credentials.username !== adminUser) return null;
+        if (!credentials?.email || !credentials.password) return null;
+        if (credentials.email !== adminEmail) return null;
         if (!adminHash) return null;
         const ok = await bcrypt.compare(credentials.password, adminHash);
         if (!ok) return null;
-        return { id: 'admin', name: adminUser };
+        return { id: 'admin', email: adminEmail };
       },
     }),
   ],
   session: { strategy: 'jwt' },
   secret: process.env.NEXTAUTH_SECRET,
+  pages: {
+    signIn: '/login',
+    error: '/login',
+  },
 };
 
 export default NextAuth(authOptions);
