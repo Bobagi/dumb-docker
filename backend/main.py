@@ -39,3 +39,10 @@ def stop_container(container_id: str):
     container = client.containers.get(container_id)
     container.stop()
     return {"result": "stopped"}
+
+
+@app.get("/api/containers/{container_id}/logs")
+def container_logs(container_id: str):
+    container = client.containers.get(container_id)
+    logs = container.logs(tail=200).decode("utf-8", errors="ignore")
+    return {"logs": logs}

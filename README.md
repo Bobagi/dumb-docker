@@ -34,7 +34,7 @@ missing.
 ## Development
 
 Run the application with Docker Compose. The first time you run it, include the
-`--build` flag so the backend image is created:
+`--build` flag so the backend dependencies are installed:
 
 ```bash
 docker-compose up --build
@@ -42,6 +42,8 @@ docker-compose up --build
 
 This starts the frontend on the port defined in `FRONTEND_PORT` (default `3000`)
 and the FastAPI backend on the port defined in `BACKEND_PORT` (default `8000`).
+The backend source is mounted with `uvicorn --reload`, so code changes take
+effect immediately once the containers are up.
 
 If you run the Next.js app without Docker Compose, set `BACKEND_URL` so the API
 routes know where to proxy requests, for example:
