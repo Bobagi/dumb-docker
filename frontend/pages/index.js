@@ -63,6 +63,12 @@ function ContainerNode({ data }) {
           >
             {data.loadingAction === 'stop' ? 'Stopping...' : 'Stop'}
           </button>
+          <button
+            onClick={data.onShowLogs}
+            className="bg-gray-500 text-white rounded px-2 py-1 text-xs"
+          >
+            Logs
+          </button>
         </div>
         {data.error && (
           <div className="text-red-500 text-xs mt-1 break-all">{data.error}</div>
@@ -77,6 +83,7 @@ export default function Home() {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [actionState, setActionState] = useState({});
+  const [logState, setLogState] = useState({ open: false, id: null, logs: '', error: null, loading: false });
 
   const updateActionState = useCallback((id, newState) => {
     setActionState((prev) => ({
@@ -98,6 +105,7 @@ export default function Home() {
           ...c,
           onRestart: () => handleAction(c.id, 'restart'),
           onStop: () => handleAction(c.id, 'stop'),
+          onShowLogs: () => showLogs(c.id),
           loadingAction: actionState[c.id]?.loadingAction,
           error: actionState[c.id]?.error,
         },
@@ -127,7 +135,7 @@ export default function Home() {
     } catch (err) {
       console.error(err);
     }
-  }, [actionState]);
+  }, [actionState, handleAction, showLogs]);
 
   const handleAction = useCallback(
     async (id, action) => {
@@ -154,6 +162,31 @@ export default function Home() {
     [fetchContainers, updateActionState]
   );
 
+  const showLogs = useCallback(
+    async (id) => {
+      setLogState({ open: true, id, logs: '', error: null, loading: true });
+      try {
+        const res = await fetch(`/api/containers/${id}/logs`);
+        if (!res.ok) {
+          let msg = res.statusText;
+          try {
+            const data = await res.json();
+            msg = data.error || JSON.stringify(data);
+          } catch {}
+          setLogState({ open: true, id, logs: '', error: msg, loading: false });
+          return;
+        }
+        const data = await res.json();
+        setLogState({ open: true, id, logs: data.logs || '', error: null, loading: false });
+      } catch (err) {
+        setLogState({ open: true, id, logs: '', error: err.message, loading: false });
+      }
+    },
+    []
+  );
+
+  const closeLogs = () => setLogState({ open: false, id: null, logs: '', error: null, loading: false });
+
   useEffect(() => {
     fetchContainers();
   }, [fetchContainers]);
@@ -163,6 +196,23 @@ export default function Home() {
       <ReactFlow nodes={nodes} edges={edges} nodeTypes={{ container: ContainerNode }}>
         <Background />
       </ReactFlow>
+      {logState.open && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white text-black p-4 rounded w-11/12 md:w-2/3 max-h-[90vh] overflow-auto">
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="font-semibold text-sm">Logs for {logState.id}</h2>
+              <button onClick={closeLogs} className="bg-blue-500 text-white rounded px-2 py-1 text-xs">Close</button>
+            </div>
+            {logState.loading ? (
+              <p className="text-sm">Loading...</p>
+            ) : logState.error ? (
+              <p className="text-red-500 text-sm break-all">{logState.error}</p>
+            ) : (
+              <pre className="text-xs whitespace-pre-wrap break-all">{logState.logs}</pre>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
