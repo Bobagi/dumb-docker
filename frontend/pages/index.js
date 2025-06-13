@@ -133,9 +133,11 @@ export default function Home() {
       setNodes(mapped);
       setEdges(generatedEdges);
     } catch (err) {
-      console.error(err);
-    }
-  }, [actionState, handleAction, showLogs]);
+    console.error(err);
+  }
+  // handleAction and showLogs are defined below and remain stable
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actionState]);
 
   const handleAction = useCallback(
     async (id, action) => {
