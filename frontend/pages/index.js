@@ -54,7 +54,13 @@ function ContainerNode({ data }) {
             disabled={data.loadingAction === 'restart'}
             className="bg-blue-500 disabled:opacity-50 text-white rounded px-2 py-1 text-xs"
           >
-            {data.loadingAction === 'restart' ? 'Restarting...' : 'Restart'}
+            {data.loadingAction === 'restart'
+              ? data.status === 'running'
+                ? 'Restarting...'
+                : 'Starting...'
+              : data.status === 'running'
+              ? 'Restart'
+              : 'Start'}
           </button>
           <button
             onClick={data.onStop}
@@ -206,6 +212,7 @@ export default function Home() {
         nodes={nodes}
         edges={edges}
         nodeTypes={{ container: ContainerNode }}
+        proOptions={{}}
         nodesDraggable={false}
       >
         <Background />
