@@ -96,35 +96,42 @@ export default function Home() {
     try {
       const res = await fetch('/api/containers');
       const data = await res.json();
-      const mapped = data.map((c, i) => ({
-        id: c.id,
-        type: 'container',
-        // offset nodes so the first card isn't flush against the canvas edges
-        position: { x: 40, y: 40 + i * 180 },
-        data: {
-          ...c,
-          onRestart: () => handleAction(c.id, 'restart'),
-          onStop: () => handleAction(c.id, 'stop'),
-          onShowLogs: () => showLogs(c.id, c.name),
-          loadingAction: actionState[c.id]?.loadingAction,
-          error: actionState[c.id]?.error,
-        },
-      }));
 
       const groups = {};
       data.forEach((c) => {
         const key = c.project || 'default';
         if (!groups[key]) groups[key] = [];
-        groups[key].push(c.id);
+        groups[key].push(c);
+      });
+
+      const mapped = [];
+      let row = 0;
+      Object.values(groups).forEach((containers) => {
+        containers.forEach((c, i) => {
+          mapped.push({
+            id: c.id,
+            type: 'container',
+            position: { x: 40 + i * 220, y: 40 + row * 180 },
+            data: {
+              ...c,
+              onRestart: () => handleAction(c.id, 'restart'),
+              onStop: () => handleAction(c.id, 'stop'),
+              onShowLogs: () => showLogs(c.id, c.name),
+              loadingAction: actionState[c.id]?.loadingAction,
+              error: actionState[c.id]?.error,
+            },
+          });
+        });
+        row++;
       });
 
       const generatedEdges = [];
-      Object.values(groups).forEach((ids) => {
-        for (let i = 0; i < ids.length - 1; i++) {
+      Object.values(groups).forEach((containers) => {
+        for (let i = 0; i < containers.length - 1; i++) {
           generatedEdges.push({
-            id: `${ids[i]}-${ids[i + 1]}`,
-            source: ids[i],
-            target: ids[i + 1],
+            id: `${containers[i].id}-${containers[i + 1].id}`,
+            source: containers[i].id,
+            target: containers[i + 1].id,
             style: { stroke: '#ffd500' },
           });
         }
@@ -133,8 +140,8 @@ export default function Home() {
       setNodes(mapped);
       setEdges(generatedEdges);
     } catch (err) {
-    console.error(err);
-  }
+      console.error(err);
+    }
   // handleAction and showLogs are defined below and remain stable
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actionState]);
@@ -195,7 +202,12 @@ export default function Home() {
 
   return (
     <div className="h-screen">
-      <ReactFlow nodes={nodes} edges={edges} nodeTypes={{ container: ContainerNode }}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={{ container: ContainerNode }}
+        nodesDraggable={false}
+      >
         <Background />
       </ReactFlow>
       {logState.open && (
