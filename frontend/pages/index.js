@@ -1,6 +1,6 @@
 import { getSession } from "next-auth/react";
 import { useEffect, useState, useCallback } from 'react';
-import ReactFlow, { Background } from 'reactflow';
+import ReactFlow, { Background, Handle, Position } from 'reactflow';
 import 'reactflow/dist/style.css';
 
 function DockerIcon(props) {
@@ -42,6 +42,7 @@ function ContainerNode({ data }) {
       : 'bg-gray-400';
   return (
     <div className="relative">
+      <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
       <div className="bg-white border-2 rounded shadow p-2 w-48 text-sm">
         <DockerIcon className="w-full h-16 object-contain mb-2" />
         <div className="mb-1">
@@ -54,7 +55,13 @@ function ContainerNode({ data }) {
             disabled={data.loadingAction === 'restart'}
             className="bg-blue-500 disabled:opacity-50 text-white rounded px-2 py-1 text-xs"
           >
-            {data.loadingAction === 'restart' ? 'Restarting...' : 'Restart'}
+            {data.loadingAction === 'restart'
+              ? data.status === 'running'
+                ? 'Restarting...'
+                : 'Starting...'
+              : data.status === 'running'
+              ? 'Restart'
+              : 'Start'}
           </button>
           <button
             onClick={data.onStop}
@@ -75,6 +82,7 @@ function ContainerNode({ data }) {
         )}
       </div>
       <span className={`absolute top-2 right-2 w-3 h-3 rounded-full ${color}`}></span>
+      <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
     </div>
   );
 }
@@ -96,45 +104,40 @@ export default function Home() {
     try {
       const res = await fetch('/api/containers');
       const data = await res.json();
-      const mapped = data.map((c, i) => ({
-        id: c.id,
-        type: 'container',
-        // offset nodes so the first card isn't flush against the canvas edges
-        position: { x: 40, y: 40 + i * 180 },
-        data: {
-          ...c,
-          onRestart: () => handleAction(c.id, 'restart'),
-          onStop: () => handleAction(c.id, 'stop'),
-          onShowLogs: () => showLogs(c.id, c.name),
-          loadingAction: actionState[c.id]?.loadingAction,
-          error: actionState[c.id]?.error,
-        },
-      }));
 
       const groups = {};
       data.forEach((c) => {
         const key = c.project || 'default';
         if (!groups[key]) groups[key] = [];
-        groups[key].push(c.id);
+        groups[key].push(c);
       });
 
-      const generatedEdges = [];
-      Object.values(groups).forEach((ids) => {
-        for (let i = 0; i < ids.length - 1; i++) {
-          generatedEdges.push({
-            id: `${ids[i]}-${ids[i + 1]}`,
-            source: ids[i],
-            target: ids[i + 1],
-            style: { stroke: '#ffd500' },
+      const mapped = [];
+      let row = 0;
+      Object.values(groups).forEach((containers) => {
+        containers.forEach((c, i) => {
+          mapped.push({
+            id: c.id,
+            type: 'container',
+            position: { x: 40 + i * 220, y: 40 + row * 180 },
+            data: {
+              ...c,
+              onRestart: () => handleAction(c.id, 'restart'),
+              onStop: () => handleAction(c.id, 'stop'),
+              onShowLogs: () => showLogs(c.id, c.name),
+              loadingAction: actionState[c.id]?.loadingAction,
+              error: actionState[c.id]?.error,
+            },
           });
-        }
+        });
+        row++;
       });
 
       setNodes(mapped);
-      setEdges(generatedEdges);
+      setEdges([]);
     } catch (err) {
-    console.error(err);
-  }
+      console.error(err);
+    }
   // handleAction and showLogs are defined below and remain stable
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actionState]);
@@ -195,7 +198,13 @@ export default function Home() {
 
   return (
     <div className="h-screen">
-      <ReactFlow nodes={nodes} edges={edges} nodeTypes={{ container: ContainerNode }}>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={{ container: ContainerNode }}
+        proOptions={{}}
+        nodesDraggable={false}
+      >
         <Background />
       </ReactFlow>
       {logState.open && (
