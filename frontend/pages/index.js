@@ -52,7 +52,7 @@ function ContainerNode({ data }) {
           <button
             onClick={data.onRestart}
             disabled={data.loadingAction === 'restart'}
-            className="bg-blue-500 disabled:opacity-50 text-white rounded px-2 py-1 text-xs"
+            className="bg-blue-500 disabled:opacity-50 text-white rounded px-2 py-1 text-xs !cursor-pointer disabled:!cursor-not-allowed"
           >
             {data.loadingAction === 'restart'
               ? data.status === 'running'
@@ -65,13 +65,13 @@ function ContainerNode({ data }) {
           <button
             onClick={data.onStop}
             disabled={data.loadingAction === 'stop'}
-            className="bg-red-500 disabled:opacity-50 text-white rounded px-2 py-1 text-xs"
+            className="bg-red-500 disabled:opacity-50 text-white rounded px-2 py-1 text-xs !cursor-pointer disabled:!cursor-not-allowed"
           >
             {data.loadingAction === 'stop' ? 'Stopping...' : 'Stop'}
           </button>
           <button
             onClick={data.onShowLogs}
-            className="bg-gray-500 text-white rounded px-2 py-1 text-xs"
+            className="bg-gray-500 text-white rounded px-2 py-1 text-xs !cursor-pointer"
           >
             Logs
           </button>
@@ -222,7 +222,7 @@ export default function Home() {
           <div className="bg-white text-black p-4 rounded w-11/12 md:w-2/3 max-h-[90vh] overflow-auto">
             <div className="flex justify-between items-center mb-2">
               <h2 className="font-semibold text-sm">Logs for {logState.name || logState.id}</h2>
-              <button onClick={closeLogs} className="bg-blue-500 text-white rounded px-2 py-1 text-xs">Close</button>
+              <button onClick={closeLogs} className="bg-blue-500 text-white rounded px-2 py-1 text-xs !cursor-pointer">Close</button>
             </div>
             {logState.loading ? (
               <p className="text-sm">Loading...</p>

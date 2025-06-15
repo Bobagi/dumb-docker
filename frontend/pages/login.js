@@ -52,7 +52,7 @@ export default function Login() {
           />
         </label>
         {error && <p className="text-red-500 text-sm">{error}</p>}
-        <button type="submit" className="bg-blue-500 text-white rounded p-1 mt-2">Sign in</button>
+        <button type="submit" className="bg-blue-500 text-white rounded p-1 mt-2 !cursor-pointer">Sign in</button>
       </form>
     </div>
   );
