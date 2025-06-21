@@ -1,15 +1,37 @@
 # Dumb Docker
 
-This repo contains a simple Next.js frontend with a FastAPI backend container. The frontend automatically
-proxies API requests to the backend so it can access the Docker data.
+This repository contains a small Docker Compose setup that runs a Next.js
+dashboard and a FastAPI API. The frontend visualises the Docker containers on
+your machine using [React Flow](https://reactflow.dev) and lets you start, stop
+or restart them and view their logs. API calls are proxied through Next.js to
+the backend so both services can talk to the local Docker daemon.
+
+## Features
+
+- Next.js frontend secured with [NextAuth](https://next-auth.js.org) Credentials provider
+- Graph view of your containers powered by React Flow
+- Start, stop and restart containers from the UI
+- View container logs directly in the browser
+- FastAPI backend that communicates with the Docker socket
 
 ## Environment Variables
-- `FRONTEND_PORT` – host port to expose the frontend. Defaults to `3000`.
-- `BACKEND_PORT` – host port to expose the backend API. Defaults to `8000`.
-- `BACKEND_URL` – address of the backend API when running the frontend
-  outside Docker Compose.
 
-Create a `.env` file in the project root to override these ports:
+The following variables can be defined in a `.env` file at the repository root:
+
+- `FRONTEND_PORT` – host port used for the Next.js app (default `3000`).
+- `BACKEND_PORT` – host port used for the FastAPI backend (default `8000`).
+- `BACKEND_URL` – address of the backend when the frontend runs outside
+  Docker Compose.
+
+The frontend also requires a separate `.env` file under `frontend/` for the
+authentication settings. See `frontend/.env.example` for the full list, but the
+important ones are:
+
+- `NEXTAUTH_SECRET` – random string used to sign NextAuth sessions.
+- `ADMIN_USERNAME` and either `ADMIN_PASSWORD_SHA256` or `ADMIN_PASSWORD` –
+  credentials for the admin login.
+
+Example root `.env` file:
 
 ```bash
 FRONTEND_PORT=3000
