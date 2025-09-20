@@ -51,15 +51,17 @@ function ContainerNode({ data }) {
         {data.ports?.length > 0 && (
           <div className="text-xs text-gray-600 mb-2 space-y-0.5">
             {data.ports.map((port) => {
-              const key = `${port.host_port || ''}-${port.container_port || ''}`;
-              const mapping = port.container_port ? ` → ${port.container_port}` : '';
-              const description = port.host_ip
-                ? `${port.host_ip}:${port.host_port}${mapping}`
-                : `${port.host_port}${mapping}`;
+              const key = `${port.host_ip || 'all'}-${port.host_port || 'unknown'}-${port.container_port || 'none'}`;
+              const hostLabel = port.host_ip ? `${port.host_ip}:${port.host_port}` : port.host_port;
+              const containerLabel = port.container_port ? `Container: ${port.container_port}` : null;
+              const descriptionParts = [];
+              if (hostLabel) descriptionParts.push(`Host: ${hostLabel}`);
+              if (containerLabel) descriptionParts.push(containerLabel);
+              const description = descriptionParts.join(' → ');
               return (
                 <div key={key} className="truncate" title={description}>
-                  Externo: {port.host_port}
-                  {port.container_port ? ` → ${port.container_port}` : ''}
+                  Host: {hostLabel || '—'}
+                  {port.container_port ? ` → Container: ${port.container_port}` : ''}
                 </div>
               );
             })}
@@ -134,7 +136,7 @@ export default function Home() {
           mapped.push({
             id: c.id,
             type: 'container',
-            position: { x: 40 + i * 220, y: 40 + row * 180 },
+            position: { x: 40 + i * 220, y: 40 + row * 220 },
             data: {
               ...c,
               onRestart: () => handleAction(c.id, 'restart'),
