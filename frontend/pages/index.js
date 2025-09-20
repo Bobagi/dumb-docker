@@ -49,22 +49,28 @@ function ContainerNode({ data }) {
         </div>
         <div className="text-xs text-gray-600 mb-2 truncate" title={data.image}>{data.image}</div>
         {data.ports?.length > 0 && (
-          <div className="text-xs text-gray-600 mb-2 space-y-0.5">
-            {data.ports.map((port) => {
-              const key = `${port.host_ip || 'all'}-${port.host_port || 'unknown'}-${port.container_port || 'none'}`;
-              const hostLabel = port.host_ip ? `${port.host_ip}:${port.host_port}` : port.host_port;
-              const containerLabel = port.container_port ? `Container: ${port.container_port}` : null;
-              const descriptionParts = [];
-              if (hostLabel) descriptionParts.push(`Host: ${hostLabel}`);
-              if (containerLabel) descriptionParts.push(containerLabel);
-              const description = descriptionParts.join(' → ');
-              return (
-                <div key={key} className="truncate" title={description}>
-                  Host: {hostLabel || '—'}
-                  {port.container_port ? ` → Container: ${port.container_port}` : ''}
-                </div>
-              );
-            })}
+          <div className="text-xs text-gray-600 mb-2">
+            <div className="font-semibold text-gray-700 uppercase tracking-wide text-[10px] mb-1">Ports</div>
+            <div className="space-y-1">
+              {data.ports.map((port) => {
+                const key = `${port.host_ip || 'all'}-${port.host_port || 'unknown'}-${port.container_port || 'none'}`;
+                const hostLabel = port.host_ip ? `${port.host_ip}:${port.host_port}` : port.host_port;
+                const [containerBase, protocol] = (port.container_port || '').split('/');
+                const containerLabel = containerBase ? `${containerBase}${protocol ? `/${protocol.toUpperCase()}` : ''}` : null;
+                const tooltipDetails = [
+                  hostLabel ? `External: ${hostLabel}` : null,
+                  containerLabel ? `Internal: ${containerLabel}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' → ');
+                return (
+                  <div key={key} className="space-y-0.5" title={tooltipDetails}>
+                    <div className="truncate">External: {hostLabel || '—'}</div>
+                    {containerLabel && <div className="truncate text-gray-500">Internal: {containerLabel}</div>}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
         <div className="flex gap-1 justify-end">
