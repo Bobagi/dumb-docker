@@ -1,5 +1,5 @@
 import { getSession } from "next-auth/react";
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import ReactFlow, { Background } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -114,6 +114,7 @@ const BASE_NODE_HEIGHT = 240;
 const PORT_LINE_HEIGHT = 18;
 const PORT_SECTION_PADDING = 12;
 const ROW_VERTICAL_GAP = 8;
+const NODE_WIDTH = 192;
 
 function estimateNodeHeight(container) {
   const portCount = container?.ports?.length || 0;
@@ -124,8 +125,10 @@ function estimateNodeHeight(container) {
 export default function Home() {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
+  const [containers, setContainers] = useState([]);
   const [actionState, setActionState] = useState({});
   const [logState, setLogState] = useState({ open: false, id: null, name: '', logs: '', error: null, loading: false });
+  const [reactFlowInstance, setReactFlowInstance] = useState(null);
 
   const updateActionState = useCallback((id, newState) => {
     setActionState((prev) => ({
@@ -139,6 +142,7 @@ export default function Home() {
       const res = await fetch('/api/containers');
       const data = await res.json();
 
+      setContainers(data);
       const groups = {};
       data.forEach((c) => {
         const key = c.project || 'default';
@@ -192,6 +196,44 @@ export default function Home() {
   // handleAction and showLogs are defined below and remain stable
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actionState]);
+
+  const externalPorts = useMemo(() => {
+    const items = [];
+    containers.forEach((container) => {
+      (container.ports || []).forEach((port) => {
+        if (!port.host_port) {
+          return;
+        }
+        items.push({
+          id: `${container.id}-${port.host_ip || 'all'}-${port.host_port}-${port.container_port || 'none'}`,
+          containerId: container.id,
+          containerName: container.name,
+          hostIp: port.host_ip,
+          hostPort: port.host_port,
+          containerPort: port.container_port,
+        });
+      });
+    });
+    return items;
+  }, [containers]);
+
+  const handleJumpToContainer = useCallback(
+    (containerId) => {
+      if (!reactFlowInstance || typeof reactFlowInstance.setCenter !== 'function') {
+        return;
+      }
+      const node = nodes.find((n) => n.id === containerId);
+      const container = containers.find((c) => c.id === containerId);
+      if (!node) {
+        return;
+      }
+      const estimatedHeight = container ? estimateNodeHeight(container) : BASE_NODE_HEIGHT;
+      const centerX = node.position.x + NODE_WIDTH / 2;
+      const centerY = node.position.y + estimatedHeight / 2;
+      reactFlowInstance.setCenter(centerX, centerY, { duration: 800, zoom: 1 });
+    },
+    [containers, nodes, reactFlowInstance]
+  );
 
   const handleAction = useCallback(
     async (id, action) => {
@@ -248,16 +290,53 @@ export default function Home() {
   }, [fetchContainers]);
 
   return (
-    <div className="h-screen">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={{ container: ContainerNode }}
-        proOptions={{}}
-        nodesDraggable={false}
-      >
-        <Background />
-      </ReactFlow>
+    <div className="h-screen flex">
+      <div className="flex-1">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={{ container: ContainerNode }}
+          proOptions={{}}
+          nodesDraggable={false}
+          onInit={setReactFlowInstance}
+          style={{ width: '100%', height: '100%' }}
+        >
+          <Background />
+        </ReactFlow>
+      </div>
+      <aside className="w-72 border-l border-gray-200 bg-white text-black overflow-y-auto p-4 space-y-3">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">External Ports</h2>
+          <p className="text-[11px] text-gray-500 mt-1">
+            Double-click a port to focus its container
+          </p>
+        </div>
+        {externalPorts.length === 0 ? (
+          <p className="text-xs text-gray-500">No external ports available.</p>
+        ) : (
+          <ul className="space-y-2 text-xs">
+            {externalPorts.map((port) => {
+              const hostLabel = port.hostIp && port.hostIp !== '::' ? `${port.hostIp}:${port.hostPort}` : port.hostPort;
+              return (
+                <li key={port.id}>
+                  <button
+                    type="button"
+                    onDoubleClick={() => handleJumpToContainer(port.containerId)}
+                    className="w-full text-left bg-gray-100 hover:bg-gray-200 transition-colors rounded px-2 py-2"
+                    title={`Container: ${port.containerName}\nInternal: ${port.containerPort || 'unknown'}`}
+                  >
+                    <div className="font-semibold truncate">{hostLabel}</div>
+                    <div className="text-gray-600 truncate">{port.containerName}</div>
+                    {port.containerPort && (
+                      <div className="text-gray-500 truncate text-[11px]">Internal: {port.containerPort}</div>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </aside>
       {logState.open && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white text-black p-4 rounded w-11/12 md:w-2/3 max-h-[90vh] overflow-auto">
