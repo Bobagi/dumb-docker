@@ -104,6 +104,17 @@ function ContainerNode({ data }) {
   );
 }
 
+const BASE_NODE_HEIGHT = 240;
+const PORT_LINE_HEIGHT = 18;
+const PORT_SECTION_PADDING = 12;
+const ROW_VERTICAL_GAP = 40;
+
+function estimateNodeHeight(container) {
+  const portCount = container?.ports?.length || 0;
+  const portsHeight = portCount > 0 ? portCount * PORT_LINE_HEIGHT + PORT_SECTION_PADDING : 0;
+  return BASE_NODE_HEIGHT + portsHeight;
+}
+
 export default function Home() {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
@@ -130,13 +141,18 @@ export default function Home() {
       });
 
       const mapped = [];
-      let row = 0;
+      let currentY = 40;
       Object.values(groups).forEach((containers) => {
+        let maxHeight = BASE_NODE_HEIGHT;
         containers.forEach((c, i) => {
+          const estimatedHeight = estimateNodeHeight(c);
+          if (estimatedHeight > maxHeight) {
+            maxHeight = estimatedHeight;
+          }
           mapped.push({
             id: c.id,
             type: 'container',
-            position: { x: 40 + i * 220, y: 40 + row * 220 },
+            position: { x: 40 + i * 220, y: currentY },
             data: {
               ...c,
               onRestart: () => handleAction(c.id, 'restart'),
@@ -147,7 +163,7 @@ export default function Home() {
             },
           });
         });
-        row++;
+        currentY += maxHeight + ROW_VERTICAL_GAP;
       });
 
       const generatedEdges = [];
