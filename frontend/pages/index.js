@@ -48,6 +48,23 @@ function ContainerNode({ data }) {
           <span className="font-semibold truncate text-black" title={data.name}>{data.name}</span>
         </div>
         <div className="text-xs text-gray-600 mb-2 truncate" title={data.image}>{data.image}</div>
+        {data.ports?.length > 0 && (
+          <div className="text-xs text-gray-600 mb-2 space-y-0.5">
+            {data.ports.map((port) => {
+              const key = `${port.host_port || ''}-${port.container_port || ''}`;
+              const mapping = port.container_port ? ` → ${port.container_port}` : '';
+              const description = port.host_ip
+                ? `${port.host_ip}:${port.host_port}${mapping}`
+                : `${port.host_port}${mapping}`;
+              return (
+                <div key={key} className="truncate" title={description}>
+                  Externo: {port.host_port}
+                  {port.container_port ? ` → ${port.container_port}` : ''}
+                </div>
+              );
+            })}
+          </div>
+        )}
         <div className="flex gap-1 justify-end">
           <button
             onClick={data.onRestart}

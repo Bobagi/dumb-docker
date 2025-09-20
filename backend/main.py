@@ -17,12 +17,29 @@ def get_containers():
     containers = client.containers.list(all=True)
     result = []
     for c in containers:
+        ports = []
+        network_ports = c.attrs.get("NetworkSettings", {}).get("Ports") or {}
+        for container_port, bindings in network_ports.items():
+            if not bindings:
+                continue
+            for binding in bindings:
+                host_port = binding.get("HostPort")
+                host_ip = binding.get("HostIp")
+                if host_port:
+                    ports.append(
+                        {
+                            "host_port": host_port,
+                            "container_port": container_port,
+                            "host_ip": host_ip,
+                        }
+                    )
         result.append({
             "id": c.id,
             "name": c.name,
             "status": c.status,
             "image": c.image.tags[0] if c.image.tags else "",
             "project": c.labels.get("com.docker.compose.project"),
+            "ports": ports,
         })
     return result
 
