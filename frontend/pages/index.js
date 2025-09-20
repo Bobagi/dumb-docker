@@ -113,7 +113,7 @@ function ContainerNode({ data }) {
 const BASE_NODE_HEIGHT = 240;
 const PORT_LINE_HEIGHT = 18;
 const PORT_SECTION_PADDING = 12;
-const ROW_VERTICAL_GAP = 20;
+const ROW_VERTICAL_GAP = 8;
 
 function estimateNodeHeight(container) {
   const portCount = container?.ports?.length || 0;
