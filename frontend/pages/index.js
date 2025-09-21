@@ -1,5 +1,5 @@
 import { getSession } from "next-auth/react";
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import ReactFlow, { Background } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -40,9 +40,10 @@ function ContainerNode({ data }) {
       : data.status === 'exited'
       ? 'bg-red-500'
       : 'bg-gray-400';
+  const highlightClasses = data.highlighted ? 'ring-4 ring-yellow-400 animate-pulse' : '';
   return (
     <div className="relative">
-      <div className="bg-white border-2 rounded shadow p-2 w-48 text-sm">
+      <div className={`bg-white border-2 rounded shadow p-2 w-48 text-sm transition ${highlightClasses}`}>
         <DockerIcon className="w-full h-16 object-contain mb-2" />
         <div className="mb-1">
           <span className="font-semibold truncate text-black" title={data.name}>{data.name}</span>
@@ -129,6 +130,8 @@ export default function Home() {
   const [actionState, setActionState] = useState({});
   const [logState, setLogState] = useState({ open: false, id: null, name: '', logs: '', error: null, loading: false });
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
+  const [highlightedContainerId, setHighlightedContainerId] = useState(null);
+  const highlightTimeoutRef = useRef(null);
 
   const updateActionState = useCallback((id, newState) => {
     setActionState((prev) => ({
@@ -231,6 +234,13 @@ export default function Home() {
       const centerX = node.position.x + NODE_WIDTH / 2;
       const centerY = node.position.y + estimatedHeight / 2;
       reactFlowInstance.setCenter(centerX, centerY, { duration: 800, zoom: 1 });
+      if (highlightTimeoutRef.current) {
+        clearTimeout(highlightTimeoutRef.current);
+      }
+      setHighlightedContainerId(containerId);
+      highlightTimeoutRef.current = setTimeout(() => {
+        setHighlightedContainerId(null);
+      }, 2000);
     },
     [containers, nodes, reactFlowInstance]
   );
@@ -289,6 +299,32 @@ export default function Home() {
     fetchContainers();
   }, [fetchContainers]);
 
+  useEffect(() => {
+    setNodes((prev) =>
+      prev.map((node) => {
+        const shouldHighlight = highlightedContainerId === node.id;
+        if (!!node.data?.highlighted === shouldHighlight) {
+          return node;
+        }
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            highlighted: shouldHighlight,
+          },
+        };
+      })
+    );
+  }, [highlightedContainerId]);
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimeoutRef.current) {
+        clearTimeout(highlightTimeoutRef.current);
+      }
+    };
+  }, []);
+
   return (
     <div className="h-screen flex">
       <div className="flex-1">
@@ -308,7 +344,7 @@ export default function Home() {
         <div>
           <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">External Ports</h2>
           <p className="text-[11px] text-gray-500 mt-1">
-            Double-click a port to focus its container
+            Double-click a port or use Focus to center its container
           </p>
         </div>
         {externalPorts.length === 0 ? (
@@ -318,19 +354,27 @@ export default function Home() {
             {externalPorts.map((port) => {
               const hostLabel = port.hostIp && port.hostIp !== '::' ? `${port.hostIp}:${port.hostPort}` : port.hostPort;
               return (
-                <li key={port.id}>
-                  <button
-                    type="button"
+                <li key={port.id} className="bg-gray-100 rounded px-2 py-2">
+                  <div
                     onDoubleClick={() => handleJumpToContainer(port.containerId)}
-                    className="w-full text-left bg-gray-100 hover:bg-gray-200 transition-colors rounded px-2 py-2"
+                    className="flex items-start gap-2"
                     title={`Container: ${port.containerName}\nInternal: ${port.containerPort || 'unknown'}`}
                   >
-                    <div className="font-semibold truncate">{hostLabel}</div>
-                    <div className="text-gray-600 truncate">{port.containerName}</div>
-                    {port.containerPort && (
-                      <div className="text-gray-500 truncate text-[11px]">Internal: {port.containerPort}</div>
-                    )}
-                  </button>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold truncate">{hostLabel}</div>
+                      <div className="text-gray-600 truncate">{port.containerName}</div>
+                      {port.containerPort && (
+                        <div className="text-gray-500 truncate text-[11px]">Internal: {port.containerPort}</div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleJumpToContainer(port.containerId)}
+                      className="shrink-0 bg-blue-500 hover:bg-blue-600 text-white rounded px-2 py-1 text-[11px] uppercase"
+                    >
+                      Focus
+                    </button>
+                  </div>
                 </li>
               );
             })}
