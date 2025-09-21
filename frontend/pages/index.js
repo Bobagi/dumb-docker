@@ -1,5 +1,5 @@
 import { getSession } from "next-auth/react";
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import ReactFlow, { Background } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -33,14 +33,17 @@ function DockerIcon(props) {
 }
 
 
+const HighlightContext = createContext(null);
+
 function ContainerNode({ data }) {
+  const highlightedContainerId = useContext(HighlightContext);
   const color =
     data.status === 'running'
       ? 'bg-green-500'
       : data.status === 'exited'
       ? 'bg-red-500'
       : 'bg-gray-400';
-  const highlightClasses = data.highlighted ? 'ring-4 ring-yellow-400 animate-pulse' : '';
+  const highlightClasses = highlightedContainerId === data.containerId ? 'ring-4 ring-yellow-400 animate-pulse' : '';
   return (
     <div className="relative">
       <div className={`bg-white border-2 rounded shadow p-2 w-48 text-sm transition ${highlightClasses}`}>
@@ -168,6 +171,7 @@ export default function Home() {
             position: { x: 40 + i * 220, y: currentY },
             data: {
               ...c,
+              containerId: c.id,
               onRestart: () => handleAction(c.id, 'restart'),
               onStop: () => handleAction(c.id, 'stop'),
               onShowLogs: () => showLogs(c.id, c.name),
@@ -300,24 +304,6 @@ export default function Home() {
   }, [fetchContainers]);
 
   useEffect(() => {
-    setNodes((prev) =>
-      prev.map((node) => {
-        const shouldHighlight = highlightedContainerId === node.id;
-        if (!!node.data?.highlighted === shouldHighlight) {
-          return node;
-        }
-        return {
-          ...node,
-          data: {
-            ...node.data,
-            highlighted: shouldHighlight,
-          },
-        };
-      })
-    );
-  }, [highlightedContainerId]);
-
-  useEffect(() => {
     return () => {
       if (highlightTimeoutRef.current) {
         clearTimeout(highlightTimeoutRef.current);
@@ -328,17 +314,19 @@ export default function Home() {
   return (
     <div className="h-screen flex">
       <div className="flex-1">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={{ container: ContainerNode }}
-          proOptions={{}}
-          nodesDraggable={false}
-          onInit={setReactFlowInstance}
-          style={{ width: '100%', height: '100%' }}
-        >
-          <Background />
-        </ReactFlow>
+        <HighlightContext.Provider value={highlightedContainerId}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={{ container: ContainerNode }}
+            proOptions={{}}
+            nodesDraggable={false}
+            onInit={setReactFlowInstance}
+            style={{ width: '100%', height: '100%' }}
+          >
+            <Background />
+          </ReactFlow>
+        </HighlightContext.Provider>
       </div>
       <aside className="w-72 border-l border-gray-200 bg-white text-black overflow-y-auto p-4 space-y-3">
         <div>
