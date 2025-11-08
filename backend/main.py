@@ -1,6 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import docker
+from docker.errors import APIError, ImageNotFound, NotFound
 
 app = FastAPI()
 client = docker.DockerClient(base_url='unix://var/run/docker.sock')
@@ -71,3 +72,34 @@ def container_logs(container_id: str):
     container = client.containers.get(container_id)
     logs = container.logs(tail=200).decode("utf-8", errors="ignore")
     return {"logs": logs}
+
+
+@app.delete("/api/containers/{container_id}/delete-image")
+def delete_container_image(container_id: str):
+    try:
+        container = client.containers.get(container_id)
+    except NotFound as exc:
+        raise HTTPException(status_code=404, detail="Container not found") from exc
+
+    image_id = container.image.id
+
+    try:
+        if container.status == "running":
+            container.stop()
+    except APIError:
+        # Ignore failures when stopping; force removal below covers it
+        pass
+
+    try:
+        container.remove(force=True)
+    except APIError as exc:
+        raise HTTPException(status_code=400, detail=str(getattr(exc, "explanation", exc))) from exc
+
+    try:
+        client.images.remove(image=image_id, force=True)
+    except ImageNotFound as exc:
+        raise HTTPException(status_code=404, detail="Image not found") from exc
+    except APIError as exc:
+        raise HTTPException(status_code=400, detail=str(getattr(exc, "explanation", exc))) from exc
+
+    return {"result": "image_deleted"}

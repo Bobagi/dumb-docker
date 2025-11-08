@@ -104,6 +104,13 @@ function ContainerNode({ data }) {
           >
             Logs
           </button>
+          <button
+            onClick={data.onDeleteImage}
+            disabled={data.loadingAction === 'deleteImage'}
+            className="bg-purple-600 disabled:opacity-50 text-white rounded px-2 py-1 text-xs !cursor-pointer disabled:!cursor-not-allowed"
+          >
+            {data.loadingAction === 'deleteImage' ? 'Deleting...' : 'Delete Image'}
+          </button>
         </div>
         {data.error && (
           <div className="text-red-500 text-xs mt-1 break-all">{data.error}</div>
@@ -135,6 +142,7 @@ export default function Home() {
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [highlightedContainerId, setHighlightedContainerId] = useState(null);
   const highlightTimeoutRef = useRef(null);
+  const logsIntervalRef = useRef(null);
 
   const updateActionState = useCallback((id, newState) => {
     setActionState((prev) => ({
@@ -175,6 +183,7 @@ export default function Home() {
               onRestart: () => handleAction(c.id, 'restart'),
               onStop: () => handleAction(c.id, 'stop'),
               onShowLogs: () => showLogs(c.id, c.name),
+              onDeleteImage: () => handleDeleteImage(c.id),
               loadingAction: actionState[c.id]?.loadingAction,
               error: actionState[c.id]?.error,
             },
@@ -200,7 +209,7 @@ export default function Home() {
     } catch (err) {
       console.error(err);
     }
-  // handleAction and showLogs are defined below and remain stable
+  // handleAction, handleDeleteImage and showLogs are defined below and remain stable
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actionState]);
 
@@ -274,39 +283,106 @@ export default function Home() {
     [fetchContainers, updateActionState]
   );
 
-  const showLogs = useCallback(
-    async (id, name) => {
-      setLogState({ open: true, id, name, logs: '', error: null, loading: true });
+  const handleDeleteImage = useCallback(
+    async (id) => {
+      updateActionState(id, { loadingAction: 'deleteImage', error: null });
       try {
-        const res = await fetch(`/api/containers/${id}/logs`);
+        const res = await fetch(`/api/containers/${id}/delete-image`, {
+          method: 'DELETE',
+        });
         if (!res.ok) {
           let msg = res.statusText;
           try {
             const data = await res.json();
             msg = data.error || JSON.stringify(data);
           } catch {}
-          setLogState({ open: true, id, name, logs: '', error: msg, loading: false });
+          updateActionState(id, { loadingAction: null, error: msg });
           return;
         }
-        const data = await res.json();
-        setLogState({ open: true, id, name, logs: data.logs || '', error: null, loading: false });
+        updateActionState(id, { loadingAction: null, error: null });
+        fetchContainers();
       } catch (err) {
-        setLogState({ open: true, id, name, logs: '', error: err.message, loading: false });
+        updateActionState(id, { loadingAction: null, error: err.message });
       }
     },
-    []
+    [fetchContainers, updateActionState]
   );
 
-  const closeLogs = () => setLogState({ open: false, id: null, name: '', logs: '', error: null, loading: false });
+  const fetchLogsForContainer = useCallback(async (id) => {
+    if (!id) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/containers/${id}/logs`);
+      if (!res.ok) {
+        let msg = res.statusText;
+        try {
+          const data = await res.json();
+          msg = data.error || JSON.stringify(data);
+        } catch {}
+        setLogState((prev) => ({ ...prev, error: msg, loading: false }));
+        return;
+      }
+      const data = await res.json();
+      setLogState((prev) => ({ ...prev, logs: data.logs || '', error: null, loading: false }));
+    } catch (err) {
+      setLogState((prev) => ({ ...prev, error: err.message, loading: false }));
+    }
+  }, []);
+
+  const showLogs = useCallback(
+    async (id, name) => {
+      setLogState({ open: true, id, name, logs: '', error: null, loading: true });
+      fetchLogsForContainer(id);
+    },
+    [fetchLogsForContainer]
+  );
+
+  const closeLogs = useCallback(() => {
+    if (logsIntervalRef.current) {
+      clearInterval(logsIntervalRef.current);
+      logsIntervalRef.current = null;
+    }
+    setLogState({ open: false, id: null, name: '', logs: '', error: null, loading: false });
+  }, []);
 
   useEffect(() => {
     fetchContainers();
   }, [fetchContainers]);
 
   useEffect(() => {
+    if (!logState.open || !logState.id) {
+      if (logsIntervalRef.current) {
+        clearInterval(logsIntervalRef.current);
+        logsIntervalRef.current = null;
+      }
+      return;
+    }
+
+    if (logsIntervalRef.current) {
+      clearInterval(logsIntervalRef.current);
+    }
+
+    logsIntervalRef.current = setInterval(() => {
+      fetchLogsForContainer(logState.id);
+    }, 3000);
+
+    return () => {
+      if (logsIntervalRef.current) {
+        clearInterval(logsIntervalRef.current);
+        logsIntervalRef.current = null;
+      }
+    };
+  }, [fetchLogsForContainer, logState.id, logState.open]);
+
+  useEffect(() => {
     return () => {
       if (highlightTimeoutRef.current) {
         clearTimeout(highlightTimeoutRef.current);
+      }
+      if (logsIntervalRef.current) {
+        clearInterval(logsIntervalRef.current);
+        logsIntervalRef.current = null;
       }
     };
   }, []);
