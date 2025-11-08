@@ -46,7 +46,7 @@ function ContainerNode({ data }) {
   const highlightClasses = highlightedContainerId === data.containerId ? 'ring-4 ring-yellow-400 animate-pulse' : '';
   return (
     <div className="relative">
-      <div className={`bg-white border-2 rounded shadow p-2 w-48 text-sm transition ${highlightClasses}`}>
+      <div className={`bg-white border-2 rounded shadow p-2 w-48 text-sm transition flex flex-col ${highlightClasses}`}>
         <DockerIcon className="w-full h-16 object-contain mb-2" />
         <div className="mb-1">
           <span className="font-semibold truncate text-black" title={data.name}>{data.name}</span>
@@ -77,7 +77,7 @@ function ContainerNode({ data }) {
             </div>
           </div>
         )}
-        <div className="flex gap-1 justify-end">
+        <div className="flex flex-wrap gap-1 justify-end">
           <button
             onClick={data.onRestart}
             disabled={data.loadingAction === 'restart'}
