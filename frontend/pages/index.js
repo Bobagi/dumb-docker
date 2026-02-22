@@ -9,6 +9,26 @@ function DockerIcon(props) {
 
 const HighlightContext = createContext(null);
 
+function ApplicationNode({ data }) {
+  return (
+    <div className="bg-slate-900 text-white rounded shadow px-4 py-3 w-[760px] border border-slate-700">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="font-semibold text-sm truncate" title={data.name}>{data.name}</h3>
+        <span className="text-[10px] uppercase tracking-wide bg-slate-700 px-2 py-0.5 rounded">{data.containerCount} containers</span>
+      </div>
+      {data.path && <div className="text-xs text-slate-300 truncate mt-1" title={data.path}>{data.path}</div>}
+      {(data.description || data.summary) && (
+        <p className="text-xs text-slate-200 mt-2 line-clamp-2">{data.description || data.summary}</p>
+      )}
+      {(data.gitBranch || data.gitCommit) && (
+        <div className="text-[11px] text-slate-300 mt-2">
+          {data.gitBranch || 'unknown'} {data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ContainerNode({ data }) {
   const highlightedContainerId = useContext(HighlightContext);
   const color =
@@ -52,43 +72,18 @@ function ContainerNode({ data }) {
           </div>
         )}
         <div className="flex flex-wrap gap-1 justify-end">
-          <button
-            onClick={data.onRestart}
-            disabled={data.loadingAction === 'restart'}
-            className="bg-blue-500 disabled:opacity-50 text-white rounded px-2 py-1 text-xs !cursor-pointer disabled:!cursor-not-allowed"
-          >
-            {data.loadingAction === 'restart'
-              ? data.status === 'running'
-                ? 'Restarting...'
-                : 'Starting...'
-              : data.status === 'running'
-              ? 'Restart'
-              : 'Start'}
+          <button onClick={data.onRestart} disabled={data.loadingAction === 'restart'} className="bg-blue-500 disabled:opacity-50 text-white rounded px-2 py-1 text-xs !cursor-pointer disabled:!cursor-not-allowed">
+            {data.loadingAction === 'restart' ? (data.status === 'running' ? 'Restarting...' : 'Starting...') : data.status === 'running' ? 'Restart' : 'Start'}
           </button>
-          <button
-            onClick={data.onStop}
-            disabled={data.loadingAction === 'stop'}
-            className="bg-red-500 disabled:opacity-50 text-white rounded px-2 py-1 text-xs !cursor-pointer disabled:!cursor-not-allowed"
-          >
+          <button onClick={data.onStop} disabled={data.loadingAction === 'stop'} className="bg-red-500 disabled:opacity-50 text-white rounded px-2 py-1 text-xs !cursor-pointer disabled:!cursor-not-allowed">
             {data.loadingAction === 'stop' ? 'Stopping...' : 'Stop'}
           </button>
-          <button
-            onClick={data.onShowLogs}
-            className="bg-gray-500 text-white rounded px-2 py-1 text-xs !cursor-pointer"
-          >
-            Logs
-          </button>
-          <button
-            onClick={data.onDeleteImage}
-            disabled={data.loadingAction === 'deleteImage'}
-            className="bg-purple-600 disabled:opacity-50 text-white rounded px-2 py-1 text-xs !cursor-pointer disabled:!cursor-not-allowed"
-          >
+          <button onClick={data.onShowLogs} className="bg-gray-500 text-white rounded px-2 py-1 text-xs !cursor-pointer">Logs</button>
+          <button onClick={data.onDeleteImage} disabled={data.loadingAction === 'deleteImage'} className="bg-purple-600 disabled:opacity-50 text-white rounded px-2 py-1 text-xs !cursor-pointer disabled:!cursor-not-allowed">
             {data.loadingAction === 'deleteImage' ? 'Deleting...' : 'Delete Image'}
           </button>
         </div>
-        {data.error && (
-          <div className="text-red-500 text-xs mt-1 break-all">{data.error}</div>
-        )}
+        {data.error && <div className="text-red-500 text-xs mt-1 break-all">{data.error}</div>}
       </div>
       <span className={`absolute top-2 right-2 w-3 h-3 rounded-full ${color}`}></span>
     </div>
@@ -98,7 +93,8 @@ function ContainerNode({ data }) {
 const BASE_NODE_HEIGHT = 240;
 const PORT_LINE_HEIGHT = 18;
 const PORT_SECTION_PADDING = 12;
-const ROW_VERTICAL_GAP = 8;
+const ROW_VERTICAL_GAP = 60;
+const APP_HEADER_HEIGHT = 120;
 const NODE_WIDTH = 192;
 
 function estimateNodeHeight(container) {
@@ -110,7 +106,7 @@ function estimateNodeHeight(container) {
 export default function Home() {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
-  const [containers, setContainers] = useState([]);
+  const [applications, setApplications] = useState([]);
   const [actionState, setActionState] = useState({});
   const [logState, setLogState] = useState({ open: false, id: null, name: '', logs: '', error: null, loading: false });
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
@@ -119,38 +115,41 @@ export default function Home() {
   const logsIntervalRef = useRef(null);
 
   const updateActionState = useCallback((id, newState) => {
-    setActionState((prev) => ({
-      ...prev,
-      [id]: { ...prev[id], ...newState },
-    }));
+    setActionState((prev) => ({ ...prev, [id]: { ...prev[id], ...newState } }));
   }, []);
 
-  const fetchContainers = useCallback(async () => {
+  const fetchApplications = useCallback(async () => {
     try {
-      const res = await fetch('/api/containers');
+      const res = await fetch('/api/applications');
       const data = await res.json();
-
-      setContainers(data);
-      const groups = {};
-      data.forEach((c) => {
-        const key = c.project || 'default';
-        if (!groups[key]) groups[key] = [];
-        groups[key].push(c);
-      });
+      setApplications(data);
 
       const mapped = [];
+      const generatedEdges = [];
       let currentY = 40;
-      Object.values(groups).forEach((containers) => {
-        let maxHeight = BASE_NODE_HEIGHT;
-        containers.forEach((c, i) => {
+
+      data.forEach((app) => {
+        mapped.push({
+          id: `app-${app.id}`,
+          type: 'application',
+          position: { x: 40, y: currentY },
+          data: {
+            ...app,
+            containerCount: app.containers?.length || 0,
+          },
+          draggable: false,
+          selectable: false,
+        });
+
+        let rowMaxHeight = APP_HEADER_HEIGHT;
+        const appContainers = app.containers || [];
+        appContainers.forEach((c, i) => {
           const estimatedHeight = estimateNodeHeight(c);
-          if (estimatedHeight > maxHeight) {
-            maxHeight = estimatedHeight;
-          }
+          rowMaxHeight = Math.max(rowMaxHeight, estimatedHeight + APP_HEADER_HEIGHT);
           mapped.push({
             id: c.id,
             type: 'container',
-            position: { x: 40 + i * 220, y: currentY },
+            position: { x: 40 + i * 220, y: currentY + APP_HEADER_HEIGHT },
             data: {
               ...c,
               containerId: c.id,
@@ -163,19 +162,17 @@ export default function Home() {
             },
           });
         });
-        currentY += maxHeight + ROW_VERTICAL_GAP;
-      });
 
-      const generatedEdges = [];
-      Object.values(groups).forEach((containers) => {
-        for (let i = 0; i < containers.length - 1; i++) {
+        for (let i = 0; i < appContainers.length - 1; i++) {
           generatedEdges.push({
-            id: `${containers[i].id}-${containers[i + 1].id}`,
-            source: containers[i].id,
-            target: containers[i + 1].id,
+            id: `${appContainers[i].id}-${appContainers[i + 1].id}`,
+            source: appContainers[i].id,
+            target: appContainers[i + 1].id,
             style: { stroke: '#ffd500' },
           });
         }
+
+        currentY += rowMaxHeight + ROW_VERTICAL_GAP;
       });
 
       setNodes(mapped);
@@ -183,17 +180,16 @@ export default function Home() {
     } catch (err) {
       console.error(err);
     }
-  // handleAction, handleDeleteImage and showLogs are defined below and remain stable
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actionState]);
 
+  const allContainers = useMemo(() => applications.flatMap((app) => app.containers || []), [applications]);
+
   const externalPorts = useMemo(() => {
     const items = [];
-    containers.forEach((container) => {
+    allContainers.forEach((container) => {
       (container.ports || []).forEach((port) => {
-        if (!port.host_port) {
-          return;
-        }
+        if (!port.host_port) return;
         items.push({
           id: `${container.id}-${port.host_ip || 'all'}-${port.host_port}-${port.container_port || 'none'}`,
           containerId: container.id,
@@ -205,87 +201,62 @@ export default function Home() {
       });
     });
     return items;
-  }, [containers]);
+  }, [allContainers]);
 
-  const handleJumpToContainer = useCallback(
-    (containerId) => {
-      if (!reactFlowInstance || typeof reactFlowInstance.setCenter !== 'function') {
+  const handleJumpToContainer = useCallback((containerId) => {
+    if (!reactFlowInstance || typeof reactFlowInstance.setCenter !== 'function') return;
+    const node = nodes.find((n) => n.id === containerId);
+    const container = allContainers.find((c) => c.id === containerId);
+    if (!node) return;
+    const estimatedHeight = container ? estimateNodeHeight(container) : BASE_NODE_HEIGHT;
+    reactFlowInstance.setCenter(node.position.x + NODE_WIDTH / 2, node.position.y + estimatedHeight / 2, { duration: 800, zoom: 1 });
+    if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
+    setHighlightedContainerId(containerId);
+    highlightTimeoutRef.current = setTimeout(() => setHighlightedContainerId(null), 2000);
+  }, [allContainers, nodes, reactFlowInstance]);
+
+  const handleAction = useCallback(async (id, action) => {
+    updateActionState(id, { loadingAction: action, error: null });
+    try {
+      const res = await fetch(`/api/containers/${id}/${action}`, { method: 'POST' });
+      if (!res.ok) {
+        let msg = res.statusText;
+        try {
+          const data = await res.json();
+          msg = data.error || JSON.stringify(data);
+        } catch {}
+        updateActionState(id, { loadingAction: null, error: msg });
         return;
       }
-      const node = nodes.find((n) => n.id === containerId);
-      const container = containers.find((c) => c.id === containerId);
-      if (!node) {
+      updateActionState(id, { loadingAction: null, error: null });
+      fetchApplications();
+    } catch (err) {
+      updateActionState(id, { loadingAction: null, error: err.message });
+    }
+  }, [fetchApplications, updateActionState]);
+
+  const handleDeleteImage = useCallback(async (id) => {
+    updateActionState(id, { loadingAction: 'deleteImage', error: null });
+    try {
+      const res = await fetch(`/api/containers/${id}/delete-image`, { method: 'DELETE' });
+      if (!res.ok) {
+        let msg = res.statusText;
+        try {
+          const data = await res.json();
+          msg = data.error || JSON.stringify(data);
+        } catch {}
+        updateActionState(id, { loadingAction: null, error: msg });
         return;
       }
-      const estimatedHeight = container ? estimateNodeHeight(container) : BASE_NODE_HEIGHT;
-      const centerX = node.position.x + NODE_WIDTH / 2;
-      const centerY = node.position.y + estimatedHeight / 2;
-      reactFlowInstance.setCenter(centerX, centerY, { duration: 800, zoom: 1 });
-      if (highlightTimeoutRef.current) {
-        clearTimeout(highlightTimeoutRef.current);
-      }
-      setHighlightedContainerId(containerId);
-      highlightTimeoutRef.current = setTimeout(() => {
-        setHighlightedContainerId(null);
-      }, 2000);
-    },
-    [containers, nodes, reactFlowInstance]
-  );
-
-  const handleAction = useCallback(
-    async (id, action) => {
-      updateActionState(id, { loadingAction: action, error: null });
-      try {
-        const res = await fetch(`/api/containers/${id}/${action}`, {
-          method: 'POST',
-        });
-        if (!res.ok) {
-          let msg = res.statusText;
-          try {
-            const data = await res.json();
-            msg = data.error || JSON.stringify(data);
-          } catch {}
-          updateActionState(id, { loadingAction: null, error: msg });
-          return;
-        }
-        updateActionState(id, { loadingAction: null, error: null });
-        fetchContainers();
-      } catch (err) {
-        updateActionState(id, { loadingAction: null, error: err.message });
-      }
-    },
-    [fetchContainers, updateActionState]
-  );
-
-  const handleDeleteImage = useCallback(
-    async (id) => {
-      updateActionState(id, { loadingAction: 'deleteImage', error: null });
-      try {
-        const res = await fetch(`/api/containers/${id}/delete-image`, {
-          method: 'DELETE',
-        });
-        if (!res.ok) {
-          let msg = res.statusText;
-          try {
-            const data = await res.json();
-            msg = data.error || JSON.stringify(data);
-          } catch {}
-          updateActionState(id, { loadingAction: null, error: msg });
-          return;
-        }
-        updateActionState(id, { loadingAction: null, error: null });
-        fetchContainers();
-      } catch (err) {
-        updateActionState(id, { loadingAction: null, error: err.message });
-      }
-    },
-    [fetchContainers, updateActionState]
-  );
+      updateActionState(id, { loadingAction: null, error: null });
+      fetchApplications();
+    } catch (err) {
+      updateActionState(id, { loadingAction: null, error: err.message });
+    }
+  }, [fetchApplications, updateActionState]);
 
   const fetchLogsForContainer = useCallback(async (id) => {
-    if (!id) {
-      return;
-    }
+    if (!id) return;
     try {
       const res = await fetch(`/api/containers/${id}/logs`);
       if (!res.ok) {
@@ -304,13 +275,10 @@ export default function Home() {
     }
   }, []);
 
-  const showLogs = useCallback(
-    async (id, name) => {
-      setLogState({ open: true, id, name, logs: '', error: null, loading: true });
-      fetchLogsForContainer(id);
-    },
-    [fetchLogsForContainer]
-  );
+  const showLogs = useCallback(async (id, name) => {
+    setLogState({ open: true, id, name, logs: '', error: null, loading: true });
+    fetchLogsForContainer(id);
+  }, [fetchLogsForContainer]);
 
   const closeLogs = useCallback(() => {
     if (logsIntervalRef.current) {
@@ -320,9 +288,7 @@ export default function Home() {
     setLogState({ open: false, id: null, name: '', logs: '', error: null, loading: false });
   }, []);
 
-  useEffect(() => {
-    fetchContainers();
-  }, [fetchContainers]);
+  useEffect(() => { fetchApplications(); }, [fetchApplications]);
 
   useEffect(() => {
     if (!logState.open || !logState.id) {
@@ -332,15 +298,8 @@ export default function Home() {
       }
       return;
     }
-
-    if (logsIntervalRef.current) {
-      clearInterval(logsIntervalRef.current);
-    }
-
-    logsIntervalRef.current = setInterval(() => {
-      fetchLogsForContainer(logState.id);
-    }, 3000);
-
+    if (logsIntervalRef.current) clearInterval(logsIntervalRef.current);
+    logsIntervalRef.current = setInterval(() => fetchLogsForContainer(logState.id), 3000);
     return () => {
       if (logsIntervalRef.current) {
         clearInterval(logsIntervalRef.current);
@@ -349,16 +308,9 @@ export default function Home() {
     };
   }, [fetchLogsForContainer, logState.id, logState.open]);
 
-  useEffect(() => {
-    return () => {
-      if (highlightTimeoutRef.current) {
-        clearTimeout(highlightTimeoutRef.current);
-      }
-      if (logsIntervalRef.current) {
-        clearInterval(logsIntervalRef.current);
-        logsIntervalRef.current = null;
-      }
-    };
+  useEffect(() => () => {
+    if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
+    if (logsIntervalRef.current) clearInterval(logsIntervalRef.current);
   }, []);
 
   return (
@@ -368,7 +320,7 @@ export default function Home() {
           <ReactFlow
             nodes={nodes}
             edges={edges}
-            nodeTypes={{ container: ContainerNode }}
+            nodeTypes={{ container: ContainerNode, application: ApplicationNode }}
             proOptions={{}}
             nodesDraggable={false}
             onInit={setReactFlowInstance}
@@ -381,37 +333,21 @@ export default function Home() {
       <aside className="w-72 border-l border-gray-200 bg-white text-black overflow-y-auto p-4 space-y-3">
         <div>
           <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">External Ports</h2>
-          <p className="text-[11px] text-gray-500 mt-1">
-            Double-click a port or use Focus to center its container
-          </p>
+          <p className="text-[11px] text-gray-500 mt-1">Double-click a port or use Focus to center its container</p>
         </div>
-        {externalPorts.length === 0 ? (
-          <p className="text-xs text-gray-500">No external ports available.</p>
-        ) : (
+        {externalPorts.length === 0 ? <p className="text-xs text-gray-500">No external ports available.</p> : (
           <ul className="space-y-2 text-xs">
             {externalPorts.map((port) => {
               const hostLabel = port.hostIp && port.hostIp !== '::' ? `${port.hostIp}:${port.hostPort}` : port.hostPort;
               return (
                 <li key={port.id} className="bg-gray-100 rounded px-2 py-2">
-                  <div
-                    onDoubleClick={() => handleJumpToContainer(port.containerId)}
-                    className="flex items-start gap-2"
-                    title={`Container: ${port.containerName}\nInternal: ${port.containerPort || 'unknown'}`}
-                  >
+                  <div onDoubleClick={() => handleJumpToContainer(port.containerId)} className="flex items-start gap-2" title={`Container: ${port.containerName}\nInternal: ${port.containerPort || 'unknown'}`}>
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold truncate">{hostLabel}</div>
                       <div className="text-gray-600 truncate">{port.containerName}</div>
-                      {port.containerPort && (
-                        <div className="text-gray-500 truncate text-[11px]">Internal: {port.containerPort}</div>
-                      )}
+                      {port.containerPort && <div className="text-gray-500 truncate text-[11px]">Internal: {port.containerPort}</div>}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleJumpToContainer(port.containerId)}
-                      className="shrink-0 bg-blue-500 hover:bg-blue-600 text-white rounded px-2 py-1 text-[11px] uppercase"
-                    >
-                      Focus
-                    </button>
+                    <button type="button" onClick={() => handleJumpToContainer(port.containerId)} className="shrink-0 bg-blue-500 hover:bg-blue-600 text-white rounded px-2 py-1 text-[11px] uppercase">Focus</button>
                   </div>
                 </li>
               );
@@ -426,13 +362,7 @@ export default function Home() {
               <h2 className="font-semibold text-sm">Logs for {logState.name || logState.id}</h2>
               <button onClick={closeLogs} className="bg-blue-500 text-white rounded px-2 py-1 text-xs !cursor-pointer">Close</button>
             </div>
-            {logState.loading ? (
-              <p className="text-sm">Loading...</p>
-            ) : logState.error ? (
-              <p className="text-red-500 text-sm break-all">{logState.error}</p>
-            ) : (
-              <pre className="text-xs whitespace-pre-wrap break-all">{logState.logs}</pre>
-            )}
+            {logState.loading ? <p className="text-sm">Loading...</p> : logState.error ? <p className="text-red-500 text-sm break-all">{logState.error}</p> : <pre className="text-xs whitespace-pre-wrap break-all">{logState.logs}</pre>}
           </div>
         </div>
       )}
@@ -443,9 +373,7 @@ export default function Home() {
 export async function getServerSideProps(context) {
   const session = await getSession(context);
   if (!session) {
-    return {
-      redirect: { destination: '/login', permanent: false },
-    };
+    return { redirect: { destination: '/login', permanent: false } };
   }
   return { props: {} };
 }

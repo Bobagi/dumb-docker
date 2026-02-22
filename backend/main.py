@@ -1,10 +1,32 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+import asyncio
+
 import docker
 from docker.errors import APIError, ImageNotFound, NotFound
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
+from config import load_application_config
+from services import (
+    ApplicationAggregationService,
+    ApplicationDiscoveryService,
+    ApplicationRegistry,
+    ContainerAssociationService,
+    DockerService,
+    GitMetadataService,
+)
 
 app = FastAPI()
-client = docker.DockerClient(base_url='unix://var/run/docker.sock')
+client = docker.DockerClient(base_url="unix://var/run/docker.sock")
+
+docker_service = DockerService(client)
+git_metadata_service = GitMetadataService()
+app_discovery_service = ApplicationDiscoveryService(git_metadata_service)
+association_service = ContainerAssociationService()
+aggregation_service = ApplicationAggregationService()
+application_registry = ApplicationRegistry()
+app_config = load_application_config()
+
+scan_task = None
 
 app.add_middleware(
     CORSMiddleware,
@@ -13,44 +35,41 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+async def run_application_scan():
+    applications = await asyncio.to_thread(app_discovery_service.discover, app_config.scan_paths)
+    containers = await asyncio.to_thread(docker_service.list_containers_for_association)
+    associations = association_service.associate(applications, containers)
+    aggregated = aggregation_service.aggregate(applications, associations)
+    await application_registry.set_applications(aggregated)
+
+
+async def scan_loop():
+    while True:
+        try:
+            await run_application_scan()
+        except Exception:
+            # scanner must remain non-blocking and resilient
+            pass
+        await asyncio.sleep(app_config.scan_interval_seconds)
+
+
+@app.on_event("startup")
+async def on_startup():
+    global scan_task
+    await run_application_scan()
+    scan_task = asyncio.create_task(scan_loop())
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    if scan_task:
+        scan_task.cancel()
+
+
 @app.get("/api/containers")
 def get_containers():
-    containers = client.containers.list(all=True)
-    result = []
-    for c in containers:
-        ports = []
-        port_map = {}
-        network_ports = c.attrs.get("NetworkSettings", {}).get("Ports") or {}
-        for container_port, bindings in network_ports.items():
-            if not bindings:
-                continue
-            for binding in bindings:
-                host_port = binding.get("HostPort")
-                if not host_port:
-                    continue
-                host_ip = binding.get("HostIp")
-                key = (container_port, host_port)
-                existing = port_map.get(key)
-                prefers_current = existing and existing.get("host_ip") not in (None, "", "::")
-                prefers_new = host_ip not in (None, "", "::")
-                if existing and (prefers_current or not prefers_new):
-                    continue
-                port_map[key] = {
-                    "host_port": host_port,
-                    "container_port": container_port,
-                    "host_ip": host_ip,
-                }
-        if port_map:
-            ports = list(port_map.values())
-        result.append({
-            "id": c.id,
-            "name": c.name,
-            "status": c.status,
-            "image": c.image.tags[0] if c.image.tags else "",
-            "project": c.labels.get("com.docker.compose.project"),
-            "ports": ports,
-        })
-    return result
+    return docker_service.list_containers()
 
 
 @app.post("/api/containers/{container_id}/restart")
@@ -87,7 +106,6 @@ def delete_container_image(container_id: str):
         if container.status == "running":
             container.stop()
     except APIError:
-        # Ignore failures when stopping; force removal below covers it
         pass
 
     try:
@@ -103,3 +121,29 @@ def delete_container_image(container_id: str):
         raise HTTPException(status_code=400, detail=str(getattr(exc, "explanation", exc))) from exc
 
     return {"result": "image_deleted"}
+
+
+@app.get("/api/applications")
+async def get_applications():
+    return await application_registry.get_applications()
+
+
+@app.get("/api/applications/{application_id}")
+async def get_application(application_id: str):
+    app_data = await application_registry.get_application(application_id)
+    if not app_data:
+        raise HTTPException(status_code=404, detail="Application not found")
+    return app_data
+
+
+@app.get("/api/applications/{application_id}/git-status")
+async def get_application_git_status(application_id: str):
+    app_data = await application_registry.get_application(application_id)
+    if not app_data:
+        raise HTTPException(status_code=404, detail="Application not found")
+    path = app_data.get("path")
+    if not path:
+        raise HTTPException(status_code=400, detail="Application has no filesystem path")
+    from pathlib import Path
+
+    return await asyncio.to_thread(git_metadata_service.get_git_status, Path(path))

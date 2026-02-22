@@ -73,3 +73,31 @@ routes know where to proxy requests, for example:
 ```bash
 BACKEND_URL=http://localhost:8000 npm run dev
 ```
+
+## Application-aware dashboard
+
+Dumb Docker now scans application roots and groups container cards by project.
+
+### Backend scan configuration
+
+You can configure application discovery in `backend/config.yml`:
+
+```yaml
+applications:
+  scanPaths:
+    - /opt
+    - /srv
+    - /var/www
+  scanIntervalSeconds: 60
+```
+
+Environment overrides are also supported:
+
+- `APPLICATION_SCAN_PATHS` (comma-separated list)
+- `APPLICATION_SCAN_INTERVAL_SECONDS`
+
+### New API endpoints
+
+- `GET /api/applications`
+- `GET /api/applications/:id`
+- `GET /api/applications/:id/git-status`
