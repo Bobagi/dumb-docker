@@ -20,13 +20,9 @@ Great for personal servers, homelabs, and small production VPS deployments.
 
 ## Visual preview
 
-<p align="center">
-  <img src="frontend/public/favicon.svg" alt="Dumb Docker icon" width="96" />
-</p>
-
 Dumb Docker was designed to be friendly and practical: open the panel, see your apps, click to manage containers, done.
 
----
+<img width="1916" height="991" alt="image" src="https://github.com/user-attachments/assets/c48fb67c-818a-442e-9840-af62289b92e9" />
 
 ## Quick Start (Docker Compose)
 
@@ -68,8 +64,6 @@ docker compose up --build
 
 Open: `http://YOUR_SERVER_IP:3000`
 
----
-
 ## Daily commands
 
 ### Restart stack
@@ -92,8 +86,6 @@ git pull
 docker compose down
 docker compose up --build -d
 ```
-
----
 
 ## Application-aware scan
 
@@ -129,8 +121,6 @@ You can override with env vars:
 - `APPLICATION_SCAN_PATHS` (comma-separated)
 - `APPLICATION_SCAN_INTERVAL_SECONDS`
 
----
-
 ## API endpoints
 
 Existing container endpoints remain available.
@@ -140,8 +130,6 @@ New endpoints:
 - `GET /api/applications`
 - `GET /api/applications/:id`
 - `GET /api/applications/:id/git-status`
-
----
 
 ## Notes
 
