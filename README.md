@@ -1,7 +1,7 @@
 # Dumb Docker
 
 <p align="center">
-  <img src="frontend/public/favicon.svg" alt="Dumb Docker logo" width="120" />
+  <img src="frontend/public/favicon_background.svg" alt="Dumb Docker logo" width="120" />
 </p>
 
 **Dumb Docker** is a lightweight dashboard for self-hosters.
