@@ -11,20 +11,22 @@ const HighlightContext = createContext(null);
 
 function ApplicationNode({ data }) {
   return (
-    <div className="bg-slate-900 text-white rounded shadow px-4 py-3 w-[760px] border border-slate-700">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="font-semibold text-sm truncate" title={data.name}>{data.name}</h3>
-        <span className="text-[10px] uppercase tracking-wide bg-slate-700 px-2 py-0.5 rounded">{data.containerCount} containers</span>
-      </div>
-      {data.path && <div className="text-xs text-slate-300 truncate mt-1" title={data.path}>{data.path}</div>}
-      {(data.description || data.summary) && (
-        <p className="text-xs text-slate-200 mt-2 line-clamp-2">{data.description || data.summary}</p>
-      )}
-      {(data.gitBranch || data.gitCommit) && (
-        <div className="text-[11px] text-slate-300 mt-2">
-          {data.gitBranch || 'unknown'} {data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}
+    <div className="bg-slate-950/60 border-2 border-slate-700 rounded-lg shadow-sm" style={{ width: data.width, height: data.height }}>
+      <div className="px-4 pt-3 pb-2">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="font-semibold text-sm truncate text-white" title={data.name}>{data.name}</h3>
+          <span className="text-[10px] uppercase tracking-wide bg-slate-700 text-white px-2 py-0.5 rounded">{data.containerCount} containers</span>
         </div>
-      )}
+        {data.path && <div className="text-xs text-slate-300 truncate mt-1" title={data.path}>{data.path}</div>}
+        {(data.description || data.summary) && (
+          <p className="text-xs text-slate-200 mt-2 line-clamp-2">{data.description || data.summary}</p>
+        )}
+        {(data.gitBranch || data.gitCommit) && (
+          <div className="text-[11px] text-slate-300 mt-2">
+            {data.gitBranch || 'unknown'} {data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -96,6 +98,9 @@ const PORT_SECTION_PADDING = 12;
 const ROW_VERTICAL_GAP = 60;
 const APP_HEADER_HEIGHT = 120;
 const NODE_WIDTH = 192;
+const HORIZONTAL_GAP = 28;
+const GROUP_PADDING = 20;
+const APP_MIN_WIDTH = 780;
 
 function estimateNodeHeight(container) {
   const portCount = container?.ports?.length || 0;
@@ -129,27 +134,43 @@ export default function Home() {
       let currentY = 40;
 
       data.forEach((app) => {
+        const appContainers = app.containers || [];
+        const containerCount = appContainers.length;
+        const calculatedWidth = Math.max(
+          APP_MIN_WIDTH,
+          GROUP_PADDING * 2 + Math.max(1, containerCount) * NODE_WIDTH + Math.max(0, containerCount - 1) * HORIZONTAL_GAP
+        );
+
+        let tallestContainer = BASE_NODE_HEIGHT;
+        appContainers.forEach((container) => {
+          tallestContainer = Math.max(tallestContainer, estimateNodeHeight(container));
+        });
+
+        const appHeight = APP_HEADER_HEIGHT + GROUP_PADDING + tallestContainer + GROUP_PADDING;
+
         mapped.push({
           id: `app-${app.id}`,
           type: 'application',
           position: { x: 40, y: currentY },
           data: {
             ...app,
-            containerCount: app.containers?.length || 0,
+            containerCount,
+            width: calculatedWidth,
+            height: appHeight,
           },
           draggable: false,
           selectable: false,
         });
 
-        let rowMaxHeight = APP_HEADER_HEIGHT;
-        const appContainers = app.containers || [];
+        let rowMaxHeight = appHeight;
         appContainers.forEach((c, i) => {
-          const estimatedHeight = estimateNodeHeight(c);
-          rowMaxHeight = Math.max(rowMaxHeight, estimatedHeight + APP_HEADER_HEIGHT);
           mapped.push({
             id: c.id,
             type: 'container',
-            position: { x: 40 + i * 220, y: currentY + APP_HEADER_HEIGHT },
+            position: {
+              x: 40 + GROUP_PADDING + i * (NODE_WIDTH + HORIZONTAL_GAP),
+              y: currentY + APP_HEADER_HEIGHT + GROUP_PADDING,
+            },
             data: {
               ...c,
               containerId: c.id,
