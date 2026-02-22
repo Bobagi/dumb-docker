@@ -77,7 +77,12 @@ function ApplicationNode({ data }) {
             ) : (
               <div className="text-[11px] text-slate-400 mt-1">Repository remote unavailable</div>
             )}
+            {(data.gitBranch || data.gitCommit) && (
+              <div className="text-[11px] text-slate-300 mt-2">
+                {data.gitBranch || 'unknown'} {data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}
               </div>
+            )}
+          </div>
           <div className="flex items-start gap-2">
             <UsagePie sharePercent={data.resourceUsage?.sharePercent || 0} />
             <div className="flex flex-col items-end gap-1">
@@ -100,11 +105,6 @@ function ApplicationNode({ data }) {
             </div>
           </div>
         </div>
-        {(data.gitBranch || data.gitCommit) && (
-          <div className="text-[11px] text-slate-300 mt-2">
-            {data.gitBranch || 'unknown'} {data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}
-          </div>
-        )}
       </div>
     </div>
   );
