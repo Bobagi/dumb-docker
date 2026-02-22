@@ -78,6 +78,10 @@ BACKEND_URL=http://localhost:8000 npm run dev
 
 Dumb Docker now scans application roots and groups container cards by project.
 
+### Backend filesystem access
+
+When running with Docker Compose, the backend service must be able to read host project folders. The provided `docker-compose.yml` mounts `/opt`, `/srv`, and `/var/www` into the backend container as read-only so application discovery can find `.git` and compose files.
+
 ### Backend scan configuration
 
 You can configure application discovery in `backend/config.yml`:

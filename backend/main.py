@@ -1,4 +1,6 @@
 import asyncio
+import logging
+from pathlib import Path
 
 import docker
 from docker.errors import APIError, ImageNotFound, NotFound
@@ -18,6 +20,9 @@ from services import (
 app = FastAPI()
 client = docker.DockerClient(base_url="unix://var/run/docker.sock")
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("dumbdocker.app-scanner")
+
 docker_service = DockerService(client)
 git_metadata_service = GitMetadataService()
 app_discovery_service = ApplicationDiscoveryService(git_metadata_service)
@@ -36,6 +41,12 @@ app.add_middleware(
 )
 
 
+def _log_scan_paths():
+    for scan_path in app_config.scan_paths:
+        exists = Path(scan_path).exists()
+        logger.info("scan_path=%s exists=%s", scan_path, exists)
+
+
 async def run_application_scan():
     applications = await asyncio.to_thread(app_discovery_service.discover, app_config.scan_paths)
     containers = await asyncio.to_thread(docker_service.list_containers_for_association)
@@ -43,20 +54,29 @@ async def run_application_scan():
     aggregated = aggregation_service.aggregate(applications, associations)
     await application_registry.set_applications(aggregated)
 
+    assigned_count = sum(len(associations.get(app.id, [])) for app in applications)
+    unassigned_count = len(associations.get("unassigned", []))
+    logger.info(
+        "scan_complete applications=%s assigned_containers=%s unassigned_containers=%s",
+        len(applications),
+        assigned_count,
+        unassigned_count,
+    )
+
 
 async def scan_loop():
     while True:
         try:
             await run_application_scan()
         except Exception:
-            # scanner must remain non-blocking and resilient
-            pass
+            logger.exception("scan_failed")
         await asyncio.sleep(app_config.scan_interval_seconds)
 
 
 @app.on_event("startup")
 async def on_startup():
     global scan_task
+    _log_scan_paths()
     await run_application_scan()
     scan_task = asyncio.create_task(scan_loop())
 
@@ -144,6 +164,5 @@ async def get_application_git_status(application_id: str):
     path = app_data.get("path")
     if not path:
         raise HTTPException(status_code=400, detail="Application has no filesystem path")
-    from pathlib import Path
 
     return await asyncio.to_thread(git_metadata_service.get_git_status, Path(path))
