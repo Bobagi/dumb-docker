@@ -1,0 +1,6 @@
+applications:
+  scanPaths:
+    - /opt
+    - /srv
+    - /var/www
+  scanIntervalSeconds: 60

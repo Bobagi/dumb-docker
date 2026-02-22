@@ -1,75 +1,149 @@
 # Dumb Docker
 
-This repository contains a small Docker Compose setup that runs a Next.js
-dashboard and a FastAPI API. The frontend visualises the Docker containers on
-your machine using [React Flow](https://reactflow.dev) and lets you start, stop
-or restart them and view their logs. API calls are proxied through Next.js to
-the backend so both services can talk to the local Docker daemon.
+<p align="center">
+  <img src="frontend/public/favicon.svg" alt="Dumb Docker logo" width="120" />
+</p>
 
-## Features
+**Dumb Docker** is a lightweight dashboard for self-hosters.
+It helps you see, organize, and control Docker containers running on your VPS.
 
-- Next.js frontend secured with [NextAuth](https://next-auth.js.org) Credentials provider
-- Graph view of your containers powered by React Flow
-- Start, stop and restart containers from the UI
-- View container logs directly in the browser
-- FastAPI backend that communicates with the Docker socket
+## Why use it?
 
-## Environment Variables
+- 🐳 View all containers in one place
+- 📦 Group containers by application/repository
+- 🔗 Show GitHub repo link, branch, and commit for each app
+- 🔄 Restart/stop containers quickly
+- 📜 Read logs in the browser
+- 📊 See per-application resource share
 
-The following variables can be defined in a `.env` file at the repository root:
+Great for personal servers, homelabs, and small production VPS deployments.
 
-- `FRONTEND_PORT` – host port used for the Next.js app (default `3000`).
-- `BACKEND_PORT` – host port used for the FastAPI backend (default `8000`).
-- `BACKEND_URL` – address of the backend when the frontend runs outside
-  Docker Compose.
+## Visual preview
 
-The frontend also requires a separate `.env` file under `frontend/` for the
-authentication settings. See `frontend/.env.example` for the full list, but the
-important ones are:
+<p align="center">
+  <img src="frontend/public/favicon.svg" alt="Dumb Docker icon" width="96" />
+</p>
 
-- `NEXTAUTH_SECRET` – random string used to sign NextAuth sessions.
-- `ADMIN_USERNAME` and either `ADMIN_PASSWORD_SHA256` or `ADMIN_PASSWORD` –
-  credentials for the admin login.
+Dumb Docker was designed to be friendly and practical: open the panel, see your apps, click to manage containers, done.
 
-Example root `.env` file:
+---
+
+## Quick Start (Docker Compose)
+
+### 1) Clone
 
 ```bash
+git clone https://github.com/Bobagi/dumb-docker.git
+cd dumb-docker
+```
+
+### 2) Create root `.env`
+
+```bash
+cat > .env <<EOF
 FRONTEND_PORT=3000
 BACKEND_PORT=8000
+EOF
 ```
-The Compose CLI automatically loads variables from this file.
 
-If you are running in GitHub Codespaces, make sure these ports are forwarded in your devcontainer or compose configuration so the API proxy works correctly.
+### 3) Configure login for dashboard
 
-## Setup
-
-Before starting the containers, install the frontend dependencies. The compose file mounts the source and runs `npm run dev`, so the packages must be installed. Docker Compose will install them automatically, but doing it manually first speeds up the initial boot.
+Create `frontend/.env` (or copy from `frontend/.env.example`):
 
 ```bash
-cd frontend && npm install
+cp frontend/.env.example frontend/.env
 ```
 
-This is required because `docker-compose.yml` mounts the frontend source and
-executes `npm run dev`. The dev server fails to start if `node_modules` is
-missing.
+Set at least:
 
-## Development
+- `NEXTAUTH_SECRET`
+- `ADMIN_USERNAME`
+- `ADMIN_PASSWORD` **or** `ADMIN_PASSWORD_SHA256`
 
-Run the application with Docker Compose. The first time you run it, include the
-`--build` flag so the backend dependencies are installed:
+### 4) Start
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
-This starts the frontend on the port defined in `FRONTEND_PORT` (default `3000`)
-and the FastAPI backend on the port defined in `BACKEND_PORT` (default `8000`).
-The backend source is mounted with `uvicorn --reload`, so code changes take
-effect immediately once the containers are up.
+Open: `http://YOUR_SERVER_IP:3000`
 
-If you run the Next.js app without Docker Compose, set `BACKEND_URL` so the API
-routes know where to proxy requests, for example:
+---
+
+## Daily commands
+
+### Restart stack
 
 ```bash
-BACKEND_URL=http://localhost:8000 npm run dev
+docker compose down
+docker compose up --build -d
 ```
+
+### See logs
+
+```bash
+docker compose logs -f
+```
+
+### Update after pulling new code
+
+```bash
+git pull
+docker compose down
+docker compose up --build -d
+```
+
+---
+
+## Application-aware scan
+
+The backend scans these paths by default:
+
+- `/opt`
+- `/srv`
+- `/var/www`
+
+An app is detected when a folder has at least one of:
+
+- `.git`
+- `docker-compose.yml` / `docker-compose.yaml` / `compose.yml` / `compose.yaml`
+- `Dockerfile`
+
+`docker-compose.yml` already mounts these host paths read-only into the backend container so discovery works on VPS.
+
+### Scanner config
+
+`backend/config.yml`:
+
+```yaml
+applications:
+  scanPaths:
+    - /opt
+    - /srv
+    - /var/www
+  scanIntervalSeconds: 60
+```
+
+You can override with env vars:
+
+- `APPLICATION_SCAN_PATHS` (comma-separated)
+- `APPLICATION_SCAN_INTERVAL_SECONDS`
+
+---
+
+## API endpoints
+
+Existing container endpoints remain available.
+
+New endpoints:
+
+- `GET /api/applications`
+- `GET /api/applications/:id`
+- `GET /api/applications/:id/git-status`
+
+---
+
+## Notes
+
+- This project is optimized for practical VPS usage.
+- If you run from Docker Compose, rebuild on backend changes to ensure dependencies/tools (like `git`) are present inside the backend container.
