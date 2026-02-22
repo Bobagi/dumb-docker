@@ -67,15 +67,17 @@ function ApplicationNode({ data }) {
     <div className="bg-slate-950/60 border-2 border-slate-700 rounded-lg shadow-sm" style={{ width: data.width, height: data.height }}>
       <div className="px-4 pt-3 pb-2">
         <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1 pr-2">
             <h3 className="font-semibold text-sm truncate text-white" title={data.name}>{data.name}</h3>
             {data.path && <div className="text-xs text-slate-300 truncate mt-1" title={data.path}>{data.path}</div>}
-            {githubUrl && (
+            {githubUrl ? (
               <a href={githubUrl} target="_blank" rel="noreferrer" className="text-[11px] text-cyan-300 hover:text-cyan-200 underline truncate block mt-1" title={githubUrl}>
                 {githubUrl}
               </a>
+            ) : (
+              <div className="text-[11px] text-slate-400 mt-1">Repository remote unavailable</div>
             )}
-          </div>
+              </div>
           <div className="flex items-start gap-2">
             <UsagePie sharePercent={data.resourceUsage?.sharePercent || 0} />
             <div className="flex flex-col items-end gap-1">
@@ -103,7 +105,6 @@ function ApplicationNode({ data }) {
             {data.gitBranch || 'unknown'} {data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}
           </div>
         )}
-        {data.description && <p className="text-xs text-slate-200 mt-2 line-clamp-2">{data.description}</p>}
       </div>
     </div>
   );

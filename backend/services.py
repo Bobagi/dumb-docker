@@ -113,7 +113,7 @@ class GitMetadataService:
     def _run_git(self, args: List[str], cwd: Path) -> Optional[str]:
         try:
             result = subprocess.run(
-                ["git", *args],
+                ["git", "-c", f"safe.directory={cwd}", *args],
                 cwd=str(cwd),
                 capture_output=True,
                 text=True,
