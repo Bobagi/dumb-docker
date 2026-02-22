@@ -52,6 +52,17 @@ function UsagePie({ sharePercent }) {
 function ApplicationNode({ data }) {
   const githubUrl = normalizeGitRemoteUrl(data.gitRemoteUrl);
 
+  const handleCollapseMouseDown = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const handleCollapseClick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    data.onToggleCollapse?.();
+  };
+
   return (
     <div className="bg-slate-950/60 border-2 border-slate-700 rounded-lg shadow-sm" style={{ width: data.width, height: data.height }}>
       <div className="px-4 pt-3 pb-2">
@@ -76,7 +87,8 @@ function ApplicationNode({ data }) {
               <span className="text-[10px] uppercase tracking-wide bg-slate-700 text-white px-2 py-0.5 rounded">{data.containerCount} containers</span>
               <button
                 type="button"
-                onClick={data.onToggleCollapse}
+                onMouseDown={handleCollapseMouseDown}
+                onClick={handleCollapseClick}
                 className="nodrag nopan text-white bg-slate-700 hover:bg-slate-600 rounded p-1 leading-none"
                 aria-label={data.collapsed ? 'Expand section' : 'Collapse section'}
                 title={data.collapsed ? 'Expand section' : 'Collapse section'}
@@ -236,7 +248,7 @@ export default function Home() {
             onToggleCollapse: () => toggleCollapse(app.id),
           },
           draggable: false,
-          selectable: false,
+          selectable: true,
         });
 
         if (!collapsed) {
