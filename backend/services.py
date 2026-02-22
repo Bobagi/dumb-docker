@@ -2,11 +2,11 @@ import asyncio
 import hashlib
 import json
 import os
-from dataclasses import dataclass, asdict
+import subprocess
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-import subprocess
 
 import docker
 
@@ -66,6 +66,11 @@ class DockerService:
         if include_internal:
             payload["labels"] = container.labels or {}
             payload["working_dir"] = container.attrs.get("Config", {}).get("WorkingDir")
+            payload["mount_sources"] = [
+                mount.get("Source")
+                for mount in (container.attrs.get("Mounts") or [])
+                if mount.get("Type") == "bind" and mount.get("Source")
+            ]
         return payload
 
     def list_containers(self) -> List[dict]:
@@ -137,7 +142,14 @@ class GitMetadataService:
 
 
 class ApplicationDiscoveryService:
-    DISCOVERY_MARKERS = (".git", "docker-compose.yml", "Dockerfile")
+    DISCOVERY_MARKERS = (
+        ".git",
+        "docker-compose.yml",
+        "docker-compose.yaml",
+        "compose.yml",
+        "compose.yaml",
+        "Dockerfile",
+    )
 
     def __init__(self, git_service: GitMetadataService):
         self.git_service = git_service
@@ -208,10 +220,18 @@ class ApplicationDiscoveryService:
 
 
 class ContainerAssociationService:
+    def _find_app_by_prefix_path(self, candidate_path: str, apps_by_path: List[Tuple[str, str]]) -> Optional[str]:
+        normalized = str(Path(candidate_path).resolve())
+        for app_path, app_id in apps_by_path:
+            if normalized == app_path or normalized.startswith(f"{app_path}/"):
+                return app_id
+        return None
+
     def associate(self, applications: List[Application], containers: List[dict]) -> Dict[str, List[dict]]:
         app_by_id = {app.id: app for app in applications}
         app_by_name = {app.name.lower(): app.id for app in applications}
         app_by_folder = {Path(app.path).name.lower(): app.id for app in applications}
+        apps_by_path = sorted(((app.path, app.id) for app in applications), key=lambda item: len(item[0]), reverse=True)
 
         associations: Dict[str, List[dict]] = {app.id: [] for app in applications}
         associations["unassigned"] = []
@@ -221,22 +241,29 @@ class ContainerAssociationService:
             labels = container.get("labels") or {}
             explicit_app = labels.get("com.dumbdocker.app")
             if explicit_app:
-                app_id = app_by_name.get(explicit_app.lower()) or explicit_app
-                if app_id not in app_by_id:
-                    app_id = None
+                normalized = explicit_app.lower()
+                app_id = (
+                    app_by_id.get(explicit_app)
+                    or app_by_name.get(normalized)
+                    or app_by_folder.get(normalized)
+                )
 
             if not app_id:
                 compose_project = labels.get("com.docker.compose.project") or container.get("project")
                 if compose_project:
-                    app_id = app_by_name.get(compose_project.lower()) or app_by_folder.get(compose_project.lower())
+                    normalized = compose_project.lower()
+                    app_id = app_by_name.get(normalized) or app_by_folder.get(normalized)
+
+            if not app_id:
+                for mount_source in container.get("mount_sources") or []:
+                    app_id = self._find_app_by_prefix_path(mount_source, apps_by_path)
+                    if app_id:
+                        break
 
             if not app_id:
                 working_dir = (container.get("working_dir") or "").rstrip("/")
                 if working_dir:
-                    for app in applications:
-                        if working_dir.startswith(app.path):
-                            app_id = app.id
-                            break
+                    app_id = self._find_app_by_prefix_path(working_dir, apps_by_path)
 
             if not app_id:
                 cname = (container.get("name") or "").lower()
@@ -246,7 +273,7 @@ class ContainerAssociationService:
                         break
 
             target = app_id if app_id in associations else "unassigned"
-            clean_container = {k: v for k, v in container.items() if k not in {"labels", "working_dir"}}
+            clean_container = {k: v for k, v in container.items() if k not in {"labels", "working_dir", "mount_sources"}}
             associations[target].append(clean_container)
         return associations
 
