@@ -22,6 +22,19 @@ function normalizeGitRemoteUrl(remoteUrl) {
   return remoteUrl;
 }
 
+
+function formatBytes(bytes) {
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = bytes;
+  let idx = 0;
+  while (size >= 1024 && idx < units.length - 1) {
+    size /= 1024;
+    idx += 1;
+  }
+  return `${size.toFixed(size >= 10 || idx === 0 ? 0 : 1)} ${units[idx]}`;
+}
+
 function UsagePie({ sharePercent }) {
   const safePercent = Number.isFinite(sharePercent) ? Math.max(0, Math.min(100, sharePercent)) : 0;
   const style = {
@@ -52,16 +65,25 @@ function ApplicationNode({ data }) {
               </a>
             )}
           </div>
-          <div className="flex flex-col items-end gap-1">
+          <div className="flex items-start gap-2">
             <UsagePie sharePercent={data.resourceUsage?.sharePercent || 0} />
-            <span className="text-[10px] uppercase tracking-wide bg-slate-700 text-white px-2 py-0.5 rounded">{data.containerCount} containers</span>
-            <button
-              type="button"
-              onClick={data.onToggleCollapse}
-              className="text-[10px] uppercase tracking-wide bg-slate-600 hover:bg-slate-500 text-white px-2 py-0.5 rounded"
-            >
-              {data.collapsed ? 'Expand' : 'Collapse'}
-            </button>
+            <div className="flex flex-col items-end gap-1">
+              <div className="text-[10px] leading-tight text-slate-200 text-right">
+                <div>CPU share: {(data.resourceUsage?.sharePercent || 0).toFixed(1)}%</div>
+                <div>CPU app: {(data.resourceUsage?.cpuPercent || 0).toFixed(2)}%</div>
+                <div>Mem app: {formatBytes(data.resourceUsage?.memoryBytes || 0)}</div>
+              </div>
+              <span className="text-[10px] uppercase tracking-wide bg-slate-700 text-white px-2 py-0.5 rounded">{data.containerCount} containers</span>
+              <button
+                type="button"
+                onClick={data.onToggleCollapse}
+                className="nodrag nopan text-white bg-slate-700 hover:bg-slate-600 rounded p-1 leading-none"
+                aria-label={data.collapsed ? 'Expand section' : 'Collapse section'}
+                title={data.collapsed ? 'Expand section' : 'Collapse section'}
+              >
+                <span className={`inline-block transition-transform ${data.collapsed ? '-rotate-90' : 'rotate-0'}`}>▼</span>
+              </button>
+            </div>
           </div>
         </div>
         {(data.gitBranch || data.gitCommit) && (
