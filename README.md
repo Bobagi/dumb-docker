@@ -1,5 +1,9 @@
 # Dumb Docker
 
+<p align="center">
+  <img src="frontend/public/favicon.svg" alt="Dumb Docker logo" width="120" />
+</p>
+
 **Dumb Docker** is a lightweight dashboard for self-hosters.
 It helps you see, organize, and control Docker containers running on your VPS.
 
@@ -13,6 +17,14 @@ It helps you see, organize, and control Docker containers running on your VPS.
 - 📊 See per-application resource share
 
 Great for personal servers, homelabs, and small production VPS deployments.
+
+## Visual preview
+
+<p align="center">
+  <img src="frontend/public/favicon.svg" alt="Dumb Docker icon" width="96" />
+</p>
+
+Dumb Docker was designed to be friendly and practical: open the panel, see your apps, click to manage containers, done.
 
 ---
 
