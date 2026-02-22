@@ -64,6 +64,8 @@ class DockerService:
             "ports": ports,
         }
         if include_internal:
+            usage = self._read_container_usage(container)
+            payload.update(usage)
             payload["labels"] = container.labels or {}
             payload["working_dir"] = container.attrs.get("Config", {}).get("WorkingDir")
             payload["mount_sources"] = [
@@ -72,6 +74,31 @@ class DockerService:
                 if mount.get("Type") == "bind" and mount.get("Source")
             ]
         return payload
+
+    def _read_container_usage(self, container) -> dict:
+        try:
+            stats = container.stats(stream=False)
+        except Exception:
+            return {"cpu_percent": 0.0, "memory_usage": 0, "memory_limit": 0}
+
+        cpu_percent = 0.0
+        try:
+            cpu_total = (stats.get("cpu_stats", {}).get("cpu_usage", {}) or {}).get("total_usage", 0)
+            prev_cpu_total = (stats.get("precpu_stats", {}).get("cpu_usage", {}) or {}).get("total_usage", 0)
+            system_total = (stats.get("cpu_stats", {}) or {}).get("system_cpu_usage", 0)
+            prev_system_total = (stats.get("precpu_stats", {}) or {}).get("system_cpu_usage", 0)
+            cpu_delta = cpu_total - prev_cpu_total
+            system_delta = system_total - prev_system_total
+            online_cpus = (stats.get("cpu_stats", {}) or {}).get("online_cpus") or 1
+            if cpu_delta > 0 and system_delta > 0:
+                cpu_percent = (cpu_delta / system_delta) * online_cpus * 100.0
+        except Exception:
+            cpu_percent = 0.0
+
+        memory = stats.get("memory_stats", {}) or {}
+        memory_usage = int(memory.get("usage") or 0)
+        memory_limit = int(memory.get("limit") or 0)
+        return {"cpu_percent": round(cpu_percent, 3), "memory_usage": memory_usage, "memory_limit": memory_limit}
 
     def list_containers(self) -> List[dict]:
         containers = self.client.containers.list(all=True)
@@ -279,13 +306,23 @@ class ContainerAssociationService:
 
 
 class ApplicationAggregationService:
+    def _with_usage(self, app_data: dict) -> dict:
+        containers = app_data.get("containers") or []
+        app_cpu_percent = sum(float(c.get("cpu_percent") or 0.0) for c in containers)
+        app_memory_usage = sum(int(c.get("memory_usage") or 0) for c in containers)
+        app_data["resourceUsage"] = {
+            "cpuPercent": round(app_cpu_percent, 3),
+            "memoryBytes": app_memory_usage,
+        }
+        return app_data
+
     def aggregate(self, applications: List[Application], associations: Dict[str, List[dict]]) -> List[dict]:
         payload = []
         for app in applications:
             app.containers = associations.get(app.id, [])
-            payload.append(asdict(app))
-        payload.sort(key=lambda item: item["name"].lower())
-        payload.append(
+            payload.append(self._with_usage(asdict(app)))
+
+        unassigned = self._with_usage(
             {
                 "id": "unassigned",
                 "name": "Unassigned Containers",
@@ -299,6 +336,16 @@ class ApplicationAggregationService:
                 "lastScanTimestamp": datetime.now(timezone.utc).isoformat(),
             }
         )
+
+        payload.append(unassigned)
+
+        total_cpu = sum((item.get("resourceUsage") or {}).get("cpuPercent", 0.0) for item in payload)
+        for item in payload:
+            app_cpu = (item.get("resourceUsage") or {}).get("cpuPercent", 0.0)
+            share = (app_cpu / total_cpu * 100.0) if total_cpu > 0 else 0.0
+            item["resourceUsage"]["sharePercent"] = round(share, 2)
+
+        payload.sort(key=lambda item: (item.get("resourceUsage", {}).get("sharePercent", 0.0), item.get("name", "").lower()), reverse=True)
         return payload
 
 

@@ -9,23 +9,67 @@ function DockerIcon(props) {
 
 const HighlightContext = createContext(null);
 
+function normalizeGitRemoteUrl(remoteUrl) {
+  if (!remoteUrl) {
+    return null;
+  }
+  if (remoteUrl.startsWith('git@github.com:')) {
+    return `https://github.com/${remoteUrl.replace('git@github.com:', '').replace(/\.git$/, '')}`;
+  }
+  if (remoteUrl.startsWith('https://github.com/') || remoteUrl.startsWith('http://github.com/')) {
+    return remoteUrl.replace(/\.git$/, '');
+  }
+  return remoteUrl;
+}
+
+function UsagePie({ sharePercent }) {
+  const safePercent = Number.isFinite(sharePercent) ? Math.max(0, Math.min(100, sharePercent)) : 0;
+  const style = {
+    background: `conic-gradient(#38bdf8 ${safePercent}%, #1e293b ${safePercent}% 100%)`,
+  };
+  return (
+    <div className="relative w-12 h-12 rounded-full" style={style} title={`Resource share: ${safePercent.toFixed(2)}%`}>
+      <div className="absolute inset-[6px] rounded-full bg-slate-900 flex items-center justify-center text-[10px] text-slate-200">
+        {safePercent.toFixed(0)}%
+      </div>
+    </div>
+  );
+}
+
 function ApplicationNode({ data }) {
+  const githubUrl = normalizeGitRemoteUrl(data.gitRemoteUrl);
+
   return (
     <div className="bg-slate-950/60 border-2 border-slate-700 rounded-lg shadow-sm" style={{ width: data.width, height: data.height }}>
       <div className="px-4 pt-3 pb-2">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="font-semibold text-sm truncate text-white" title={data.name}>{data.name}</h3>
-          <span className="text-[10px] uppercase tracking-wide bg-slate-700 text-white px-2 py-0.5 rounded">{data.containerCount} containers</span>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="font-semibold text-sm truncate text-white" title={data.name}>{data.name}</h3>
+            {data.path && <div className="text-xs text-slate-300 truncate mt-1" title={data.path}>{data.path}</div>}
+            {githubUrl && (
+              <a href={githubUrl} target="_blank" rel="noreferrer" className="text-[11px] text-cyan-300 hover:text-cyan-200 underline truncate block mt-1" title={githubUrl}>
+                {githubUrl}
+              </a>
+            )}
+          </div>
+          <div className="flex flex-col items-end gap-1">
+            <UsagePie sharePercent={data.resourceUsage?.sharePercent || 0} />
+            <span className="text-[10px] uppercase tracking-wide bg-slate-700 text-white px-2 py-0.5 rounded">{data.containerCount} containers</span>
+            <button
+              type="button"
+              onClick={data.onToggleCollapse}
+              className="text-[10px] uppercase tracking-wide bg-slate-600 hover:bg-slate-500 text-white px-2 py-0.5 rounded"
+            >
+              {data.collapsed ? 'Expand' : 'Collapse'}
+            </button>
+          </div>
         </div>
-        {data.path && <div className="text-xs text-slate-300 truncate mt-1" title={data.path}>{data.path}</div>}
-        {(data.description || data.summary) && (
-          <p className="text-xs text-slate-200 mt-2 line-clamp-2">{data.description || data.summary}</p>
-        )}
         {(data.gitBranch || data.gitCommit) && (
           <div className="text-[11px] text-slate-300 mt-2">
             {data.gitBranch || 'unknown'} {data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}
           </div>
         )}
+        {data.description && <p className="text-xs text-slate-200 mt-2 line-clamp-2">{data.description}</p>}
       </div>
     </div>
   );
@@ -95,12 +139,12 @@ function ContainerNode({ data }) {
 const BASE_NODE_HEIGHT = 240;
 const PORT_LINE_HEIGHT = 18;
 const PORT_SECTION_PADDING = 12;
-const ROW_VERTICAL_GAP = 60;
+const ROW_VERTICAL_GAP = 40;
 const APP_HEADER_HEIGHT = 120;
 const NODE_WIDTH = 192;
 const HORIZONTAL_GAP = 28;
 const GROUP_PADDING = 20;
-const APP_MIN_WIDTH = 780;
+const APP_MIN_WIDTH = 620;
 
 function estimateNodeHeight(container) {
   const portCount = container?.ports?.length || 0;
@@ -112,6 +156,7 @@ export default function Home() {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [applications, setApplications] = useState([]);
+  const [collapsedApps, setCollapsedApps] = useState({});
   const [actionState, setActionState] = useState({});
   const [logState, setLogState] = useState({ open: false, id: null, name: '', logs: '', error: null, loading: false });
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
@@ -121,6 +166,10 @@ export default function Home() {
 
   const updateActionState = useCallback((id, newState) => {
     setActionState((prev) => ({ ...prev, [id]: { ...prev[id], ...newState } }));
+  }, []);
+
+  const toggleCollapse = useCallback((appId) => {
+    setCollapsedApps((prev) => ({ ...prev, [appId]: !prev[appId] }));
   }, []);
 
   const fetchApplications = useCallback(async () => {
@@ -135,18 +184,22 @@ export default function Home() {
 
       data.forEach((app) => {
         const appContainers = app.containers || [];
+        const collapsed = !!collapsedApps[app.id];
         const containerCount = appContainers.length;
+
         const calculatedWidth = Math.max(
           APP_MIN_WIDTH,
           GROUP_PADDING * 2 + Math.max(1, containerCount) * NODE_WIDTH + Math.max(0, containerCount - 1) * HORIZONTAL_GAP
         );
 
-        let tallestContainer = BASE_NODE_HEIGHT;
-        appContainers.forEach((container) => {
-          tallestContainer = Math.max(tallestContainer, estimateNodeHeight(container));
-        });
-
-        const appHeight = APP_HEADER_HEIGHT + GROUP_PADDING + tallestContainer + GROUP_PADDING;
+        let appHeight = APP_HEADER_HEIGHT + 12;
+        if (!collapsed && containerCount > 0) {
+          let tallestContainer = BASE_NODE_HEIGHT;
+          appContainers.forEach((container) => {
+            tallestContainer = Math.max(tallestContainer, estimateNodeHeight(container));
+          });
+          appHeight = APP_HEADER_HEIGHT + GROUP_PADDING + tallestContainer + GROUP_PADDING;
+        }
 
         mapped.push({
           id: `app-${app.id}`,
@@ -154,46 +207,49 @@ export default function Home() {
           position: { x: 40, y: currentY },
           data: {
             ...app,
+            collapsed,
             containerCount,
             width: calculatedWidth,
             height: appHeight,
+            onToggleCollapse: () => toggleCollapse(app.id),
           },
           draggable: false,
           selectable: false,
         });
 
-        let rowMaxHeight = appHeight;
-        appContainers.forEach((c, i) => {
-          mapped.push({
-            id: c.id,
-            type: 'container',
-            position: {
-              x: 40 + GROUP_PADDING + i * (NODE_WIDTH + HORIZONTAL_GAP),
-              y: currentY + APP_HEADER_HEIGHT + GROUP_PADDING,
-            },
-            data: {
-              ...c,
-              containerId: c.id,
-              onRestart: () => handleAction(c.id, 'restart'),
-              onStop: () => handleAction(c.id, 'stop'),
-              onShowLogs: () => showLogs(c.id, c.name),
-              onDeleteImage: () => handleDeleteImage(c.id),
-              loadingAction: actionState[c.id]?.loadingAction,
-              error: actionState[c.id]?.error,
-            },
+        if (!collapsed) {
+          appContainers.forEach((c, i) => {
+            mapped.push({
+              id: c.id,
+              type: 'container',
+              position: {
+                x: 40 + GROUP_PADDING + i * (NODE_WIDTH + HORIZONTAL_GAP),
+                y: currentY + APP_HEADER_HEIGHT + GROUP_PADDING,
+              },
+              data: {
+                ...c,
+                containerId: c.id,
+                onRestart: () => handleAction(c.id, 'restart'),
+                onStop: () => handleAction(c.id, 'stop'),
+                onShowLogs: () => showLogs(c.id, c.name),
+                onDeleteImage: () => handleDeleteImage(c.id),
+                loadingAction: actionState[c.id]?.loadingAction,
+                error: actionState[c.id]?.error,
+              },
+            });
           });
-        });
 
-        for (let i = 0; i < appContainers.length - 1; i++) {
-          generatedEdges.push({
-            id: `${appContainers[i].id}-${appContainers[i + 1].id}`,
-            source: appContainers[i].id,
-            target: appContainers[i + 1].id,
-            style: { stroke: '#ffd500' },
-          });
+          for (let i = 0; i < appContainers.length - 1; i++) {
+            generatedEdges.push({
+              id: `${appContainers[i].id}-${appContainers[i + 1].id}`,
+              source: appContainers[i].id,
+              target: appContainers[i + 1].id,
+              style: { stroke: '#ffd500' },
+            });
+          }
         }
 
-        currentY += rowMaxHeight + ROW_VERTICAL_GAP;
+        currentY += appHeight + ROW_VERTICAL_GAP;
       });
 
       setNodes(mapped);
@@ -202,7 +258,7 @@ export default function Home() {
       console.error(err);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actionState]);
+  }, [actionState, collapsedApps, toggleCollapse]);
 
   const allContainers = useMemo(() => applications.flatMap((app) => app.containers || []), [applications]);
 
