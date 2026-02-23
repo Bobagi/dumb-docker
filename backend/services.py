@@ -210,6 +210,23 @@ class GitMetadataService:
                     "error": err or f"Failed to switch from {active_branch or 'unknown'} to {selected_branch}.",
                 }
 
+        local_commit = self._run_git(["rev-parse", "HEAD"], path)
+        remote_heads = self._run_git(["ls-remote", "--heads", "origin", selected_branch], path)
+        remote_commit = None
+        if remote_heads:
+            first_line = remote_heads.splitlines()[0]
+            pieces = first_line.split()
+            if pieces:
+                remote_commit = pieces[0].strip() or None
+
+        if local_commit and remote_commit and local_commit == remote_commit:
+            return {
+                "ok": True,
+                "branch": selected_branch,
+                "commit": local_commit,
+                "output": "Already up to date.",
+            }
+
         ok, out, err = self._run_git_with_result(
             ["pull", "--no-write-fetch-head", "origin", selected_branch],
             path,
