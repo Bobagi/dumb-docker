@@ -41,7 +41,7 @@ function UsagePie({ label, sharePercent }) {
     background:
       safePercent <= 0
         ? '#1a1a1a'
-        : `conic-gradient(from -90deg, transparent 0% ${safePercent}%, #1a1a1a ${safePercent}% 100%), conic-gradient(from -90deg, #facc15 0%, #facc15 70%, #f97316 88%, #dc2626 100%)`,
+        : `conic-gradient(transparent 0% ${safePercent}%, #1a1a1a ${safePercent}% 100%), conic-gradient(#facc15 0%, #f59e0b 35%, #ef4444 55%, #b91c1c 100%)`,
   };
   return (
     <div className="flex flex-col items-center gap-1" title={`${label}: ${safePercent.toFixed(2)}%`}>
