@@ -37,12 +37,11 @@ function formatBytes(bytes) {
 
 function UsagePie({ label, sharePercent }) {
   const safePercent = Number.isFinite(sharePercent) ? Math.max(0, Math.min(100, sharePercent)) : 0;
-  const orangeStop = safePercent * 0.6;
   const style = {
     background:
       safePercent <= 0
         ? '#1a1a1a'
-        : `conic-gradient(#facc15 0%, #f97316 ${orangeStop}%, #dc2626 ${safePercent}%, #1a1a1a ${safePercent}%, #1a1a1a 100%)`,
+        : `conic-gradient(from -90deg, transparent 0% ${safePercent}%, #1a1a1a ${safePercent}% 100%), conic-gradient(from -90deg, #facc15 0%, #facc15 70%, #f97316 88%, #dc2626 100%)`,
   };
   return (
     <div className="flex flex-col items-center gap-1" title={`${label}: ${safePercent.toFixed(2)}%`}>
