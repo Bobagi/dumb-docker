@@ -85,7 +85,7 @@ function ApplicationNode({ data }) {
             )}
             {(data.gitBranch || data.gitCommit) && (
               <div className="text-[11px] text-yellow-100/90 mt-2">
-                {data.gitBranch || 'unknown'} {data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}
+                Active: {data.gitBranch || 'unknown'} {data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}
               </div>
             )}
             <div className="mt-2 flex items-center gap-1">
@@ -248,6 +248,7 @@ export default function Home() {
   const [highlightedContainerId, setHighlightedContainerId] = useState(null);
   const highlightTimeoutRef = useRef(null);
   const logsIntervalRef = useRef(null);
+  const loadedBranchesRef = useRef(new Set());
 
   const updateActionState = useCallback((id, newState) => {
     setActionState((prev) => ({ ...prev, [id]: { ...prev[id], ...newState } }));
@@ -257,7 +258,12 @@ export default function Home() {
     setBranchState((prev) => ({ ...prev, [id]: { ...prev[id], ...newState } }));
   }, []);
 
-  const fetchApplicationBranches = useCallback(async (appId) => {
+  const fetchApplicationBranches = useCallback(async (appId, options = {}) => {
+    const force = !!options.force;
+    if (!force && loadedBranchesRef.current.has(appId)) {
+      return null;
+    }
+
     updateBranchState(appId, { loading: true, error: null });
     try {
       const response = await fetch(`/api/applications/${appId}/branches`);
@@ -267,6 +273,7 @@ export default function Home() {
       }
       const branches = Array.isArray(payload?.branches) ? payload.branches : [];
       const currentBranch = payload?.currentBranch || null;
+      loadedBranchesRef.current.add(appId);
       updateBranchState(appId, {
         loading: false,
         error: null,
@@ -289,97 +296,10 @@ export default function Home() {
       const res = await fetch('/api/applications');
       const data = await res.json();
       setApplications(data);
-
-      const mapped = [];
-      const generatedEdges = [];
-      let currentY = 40;
-
-      data.forEach((app) => {
-        const appContainers = app.containers || [];
-        const collapsed = !!collapsedApps[app.id];
-        const containerCount = appContainers.length;
-
-        const calculatedWidth = Math.max(
-          APP_MIN_WIDTH,
-          GROUP_PADDING * 2 + Math.max(1, containerCount) * NODE_WIDTH + Math.max(0, containerCount - 1) * HORIZONTAL_GAP
-        );
-
-        let appHeight = APP_HEADER_HEIGHT + 12;
-        if (!collapsed && containerCount > 0) {
-          let tallestContainer = BASE_NODE_HEIGHT;
-          appContainers.forEach((container) => {
-            tallestContainer = Math.max(tallestContainer, estimateNodeHeight(container));
-          });
-          appHeight = APP_HEADER_HEIGHT + GROUP_PADDING + tallestContainer + GROUP_PADDING;
-        }
-
-        mapped.push({
-          id: `app-${app.id}`,
-          type: 'application',
-          position: { x: 40, y: currentY },
-          data: {
-            ...app,
-            collapsed,
-            containerCount,
-            width: calculatedWidth,
-            height: appHeight,
-            availableBranches: branchState[app.id]?.branches || (app.gitBranch ? [app.gitBranch] : []),
-            selectedBranch: branchState[app.id]?.selectedBranch || app.gitBranch || '',
-            branchLoading: !!branchState[app.id]?.loading,
-            branchPulling: !!branchState[app.id]?.pulling,
-            branchError: branchState[app.id]?.error || null,
-            onBranchChange: (branch) => updateBranchState(app.id, { selectedBranch: branch, error: null }),
-            onRefreshBranches: () => fetchApplicationBranches(app.id),
-            applicationId: app.id,
-            onPullBranch: pullApplicationBranch,
-            onToggleCollapse: () => toggleCollapse(app.id),
-          },
-          draggable: false,
-          selectable: true,
-        });
-
-        if (!collapsed) {
-          appContainers.forEach((c, i) => {
-            mapped.push({
-              id: c.id,
-              type: 'container',
-              position: {
-                x: 40 + GROUP_PADDING + i * (NODE_WIDTH + HORIZONTAL_GAP),
-                y: currentY + APP_HEADER_HEIGHT + GROUP_PADDING,
-              },
-              data: {
-                ...c,
-                containerId: c.id,
-                onRestart: () => handleAction(c.id, 'restart'),
-                onStop: () => handleAction(c.id, 'stop'),
-                onShowLogs: () => showLogs(c.id, c.name),
-                onDeleteImage: () => handleDeleteImage(c.id),
-                loadingAction: actionState[c.id]?.loadingAction,
-                error: actionState[c.id]?.error,
-              },
-            });
-          });
-
-          for (let i = 0; i < appContainers.length - 1; i++) {
-            generatedEdges.push({
-              id: `${appContainers[i].id}-${appContainers[i + 1].id}`,
-              source: appContainers[i].id,
-              target: appContainers[i + 1].id,
-              style: { stroke: '#ffd500' },
-            });
-          }
-        }
-
-        currentY += appHeight + ROW_VERTICAL_GAP;
-      });
-
-      setNodes(mapped);
-      setEdges(generatedEdges);
     } catch (err) {
       console.error(err);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actionState, branchState, collapsedApps, fetchApplicationBranches, toggleCollapse, updateBranchState]);
+  }, []);
 
   const allContainers = useMemo(() => applications.flatMap((app) => app.containers || []), [applications]);
 
@@ -442,7 +362,7 @@ export default function Home() {
           : app
       )));
       fetchApplications();
-      fetchApplicationBranches(appId);
+      fetchApplicationBranches(appId, { force: true });
     } catch (err) {
       updateBranchState(appId, { pulling: false, error: err.message || 'Failed to pull branch.' });
     }
@@ -488,6 +408,95 @@ export default function Home() {
     }
   }, [fetchApplications, updateActionState]);
 
+  useEffect(() => {
+    const mapped = [];
+    const generatedEdges = [];
+    let currentY = 40;
+
+    applications.forEach((app) => {
+      const appContainers = app.containers || [];
+      const collapsed = !!collapsedApps[app.id];
+      const containerCount = appContainers.length;
+
+      const calculatedWidth = Math.max(
+        APP_MIN_WIDTH,
+        GROUP_PADDING * 2 + Math.max(1, containerCount) * NODE_WIDTH + Math.max(0, containerCount - 1) * HORIZONTAL_GAP
+      );
+
+      let appHeight = APP_HEADER_HEIGHT + 12;
+      if (!collapsed && containerCount > 0) {
+        let tallestContainer = BASE_NODE_HEIGHT;
+        appContainers.forEach((container) => {
+          tallestContainer = Math.max(tallestContainer, estimateNodeHeight(container));
+        });
+        appHeight = APP_HEADER_HEIGHT + GROUP_PADDING + tallestContainer + GROUP_PADDING;
+      }
+
+      mapped.push({
+        id: `app-${app.id}`,
+        type: 'application',
+        position: { x: 40, y: currentY },
+        data: {
+          ...app,
+          collapsed,
+          containerCount,
+          width: calculatedWidth,
+          height: appHeight,
+          availableBranches: branchState[app.id]?.branches || (app.gitBranch ? [app.gitBranch] : []),
+          selectedBranch: branchState[app.id]?.selectedBranch || app.gitBranch || '',
+          branchLoading: !!branchState[app.id]?.loading,
+          branchPulling: !!branchState[app.id]?.pulling,
+          branchError: branchState[app.id]?.error || null,
+          onBranchChange: (branch) => updateBranchState(app.id, { selectedBranch: branch, error: null }),
+          onRefreshBranches: () => fetchApplicationBranches(app.id, { force: true }),
+          applicationId: app.id,
+          onPullBranch: pullApplicationBranch,
+          onToggleCollapse: () => toggleCollapse(app.id),
+        },
+        draggable: false,
+        selectable: true,
+      });
+
+      if (!collapsed) {
+        appContainers.forEach((c, i) => {
+          mapped.push({
+            id: c.id,
+            type: 'container',
+            position: {
+              x: 40 + GROUP_PADDING + i * (NODE_WIDTH + HORIZONTAL_GAP),
+              y: currentY + APP_HEADER_HEIGHT + GROUP_PADDING,
+            },
+            data: {
+              ...c,
+              containerId: c.id,
+              onRestart: () => handleAction(c.id, 'restart'),
+              onStop: () => handleAction(c.id, 'stop'),
+              onShowLogs: () => showLogs(c.id, c.name),
+              onDeleteImage: () => handleDeleteImage(c.id),
+              loadingAction: actionState[c.id]?.loadingAction,
+              error: actionState[c.id]?.error,
+            },
+          });
+        });
+
+        for (let i = 0; i < appContainers.length - 1; i++) {
+          generatedEdges.push({
+            id: `${appContainers[i].id}-${appContainers[i + 1].id}`,
+            source: appContainers[i].id,
+            target: appContainers[i + 1].id,
+            style: { stroke: '#ffd500' },
+          });
+        }
+      }
+
+      currentY += appHeight + ROW_VERTICAL_GAP;
+    });
+
+    setNodes(mapped);
+    setEdges(generatedEdges);
+  }, [actionState, applications, branchState, collapsedApps, fetchApplicationBranches, handleAction, handleDeleteImage, pullApplicationBranch, showLogs, toggleCollapse, updateBranchState]);
+
+
   const fetchLogsForContainer = useCallback(async (id) => {
     if (!id) return;
     try {
@@ -525,10 +534,9 @@ export default function Home() {
 
   useEffect(() => {
     applications.forEach((app) => {
-      if (branchState[app.id]?.branches?.length) return;
       fetchApplicationBranches(app.id);
     });
-  }, [applications, branchState, fetchApplicationBranches]);
+  }, [applications, fetchApplicationBranches]);
 
   useEffect(() => {
     if (!logState.open || !logState.id) {
