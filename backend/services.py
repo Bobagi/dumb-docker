@@ -210,7 +210,13 @@ class GitMetadataService:
                     "error": err or f"Failed to switch from {active_branch or 'unknown'} to {selected_branch}.",
                 }
 
-        ok, out, err = self._run_git_with_result(["pull", "origin", selected_branch], path, timeout=30)
+        ok, out, err = self._run_git_with_result(
+            ["pull", "--no-write-fetch-head", "origin", selected_branch],
+            path,
+            timeout=30,
+        )
+        if not ok and err and "unknown option" in err.lower() and "write-fetch-head" in err.lower():
+            ok, out, err = self._run_git_with_result(["pull", "origin", selected_branch], path, timeout=30)
         if not ok:
             return {
                 "ok": False,
