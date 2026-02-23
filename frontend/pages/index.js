@@ -224,7 +224,7 @@ const BASE_NODE_HEIGHT = 240;
 const PORT_LINE_HEIGHT = 18;
 const PORT_SECTION_PADDING = 12;
 const ROW_VERTICAL_GAP = 40;
-const APP_HEADER_HEIGHT = 120;
+const APP_HEADER_HEIGHT = 156;
 const NODE_WIDTH = 192;
 const HORIZONTAL_GAP = 28;
 const GROUP_PADDING = 20;
@@ -456,7 +456,7 @@ export default function Home() {
         GROUP_PADDING * 2 + Math.max(1, containerCount) * NODE_WIDTH + Math.max(0, containerCount - 1) * HORIZONTAL_GAP
       );
 
-      let appHeight = APP_HEADER_HEIGHT + 12;
+      let appHeight = APP_HEADER_HEIGHT + GROUP_PADDING;
       if (!collapsed && containerCount > 0) {
         let tallestContainer = BASE_NODE_HEIGHT;
         appContainers.forEach((container) => {

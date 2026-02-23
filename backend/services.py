@@ -178,16 +178,11 @@ class GitMetadataService:
 
     def list_active_branches(self, path: Path) -> dict:
         current_branch = self._run_git(["rev-parse", "--abbrev-ref", "HEAD"], path)
-        self._run_git(["fetch", "--prune", "origin"], path)
-        branches_output = self._run_git(["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"], path)
+        branches_output = self._run_git(["for-each-ref", "--format=%(refname:short)", "refs/heads"], path)
         branches: List[str] = []
         if branches_output:
             for branch in branches_output.splitlines():
                 normalized = branch.strip()
-                if not normalized or normalized == "origin/HEAD":
-                    continue
-                if normalized.startswith("origin/"):
-                    normalized = normalized[len("origin/") :]
                 if normalized and normalized not in branches:
                     branches.append(normalized)
 
