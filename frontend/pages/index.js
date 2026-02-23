@@ -35,16 +35,22 @@ function formatBytes(bytes) {
   return `${size.toFixed(size >= 10 || idx === 0 ? 0 : 1)} ${units[idx]}`;
 }
 
-function UsagePie({ sharePercent }) {
+function UsagePie({ label, sharePercent }) {
   const safePercent = Number.isFinite(sharePercent) ? Math.max(0, Math.min(100, sharePercent)) : 0;
   const style = {
-    background: `conic-gradient(#38bdf8 ${safePercent}%, #1e293b ${safePercent}% 100%)`,
+    background:
+      safePercent <= 0
+        ? '#1a1a1a'
+        : `conic-gradient(transparent 0% ${safePercent}%, #1a1a1a ${safePercent}% 100%), conic-gradient(#facc15 0%, #f59e0b 35%, #ef4444 55%, #b91c1c 100%)`,
   };
   return (
-    <div className="relative w-12 h-12 rounded-full" style={style} title={`Resource share: ${safePercent.toFixed(2)}%`}>
-      <div className="absolute inset-[6px] rounded-full bg-slate-900 flex items-center justify-center text-[10px] text-slate-200">
-        {safePercent.toFixed(0)}%
+    <div className="flex flex-col items-center gap-1" title={`${label}: ${safePercent.toFixed(2)}%`}>
+      <div className="relative w-12 h-12 rounded-full" style={style}>
+        <div className="absolute inset-[6px] rounded-full bg-black flex items-center justify-center text-[10px] text-yellow-100">
+          {safePercent.toFixed(0)}%
+        </div>
       </div>
+      <span className="text-[9px] uppercase tracking-wide text-yellow-200">{label}</span>
     </div>
   );
 }
@@ -64,39 +70,41 @@ function ApplicationNode({ data }) {
   };
 
   return (
-    <div className="bg-slate-950/60 border-2 border-slate-700 rounded-lg shadow-sm" style={{ width: data.width, height: data.height }}>
+    <div className="bg-black/80 border-2 border-yellow-500 rounded-lg shadow-sm" style={{ width: data.width, height: data.height }}>
       <div className="px-4 pt-3 pb-2">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1 pr-2">
-            <h3 className="font-semibold text-sm truncate text-white" title={data.name}>{data.name}</h3>
-            {data.path && <div className="text-xs text-slate-300 truncate mt-1" title={data.path}>{data.path}</div>}
+            <h3 className="font-semibold text-sm truncate text-yellow-100" title={data.name}>{data.name}</h3>
+            {data.path && <div className="text-xs text-yellow-200/80 truncate mt-1" title={data.path}>{data.path}</div>}
             {githubUrl ? (
-              <a href={githubUrl} target="_blank" rel="noreferrer" className="text-[11px] text-cyan-300 hover:text-cyan-200 underline truncate block mt-1" title={githubUrl}>
+              <a href={githubUrl} target="_blank" rel="noreferrer" className="text-[11px] text-yellow-300 hover:text-yellow-200 underline truncate block mt-1" title={githubUrl}>
                 {githubUrl}
               </a>
             ) : (
-              <div className="text-[11px] text-slate-400 mt-1">Repository remote unavailable</div>
+              <div className="text-[11px] text-yellow-200/70 mt-1">Repository remote unavailable</div>
             )}
             {(data.gitBranch || data.gitCommit) && (
-              <div className="text-[11px] text-slate-300 mt-2">
+              <div className="text-[11px] text-yellow-100/90 mt-2">
                 {data.gitBranch || 'unknown'} {data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}
               </div>
             )}
           </div>
           <div className="flex items-start gap-2">
-            <UsagePie sharePercent={data.resourceUsage?.sharePercent || 0} />
+            <UsagePie label="CPU" sharePercent={data.resourceUsage?.sharePercent || 0} />
+            <UsagePie label="MEM" sharePercent={data.resourceUsage?.memorySharePercent || 0} />
             <div className="flex flex-col items-end gap-1">
-              <div className="text-[10px] leading-tight text-slate-200 text-right">
+              <div className="text-[10px] leading-tight text-yellow-100/90 text-right">
                 <div>CPU share: {(data.resourceUsage?.sharePercent || 0).toFixed(1)}%</div>
+                <div>Mem share: {(data.resourceUsage?.memorySharePercent || 0).toFixed(1)}%</div>
                 <div>CPU app: {(data.resourceUsage?.cpuPercent || 0).toFixed(2)}%</div>
                 <div>Mem app: {formatBytes(data.resourceUsage?.memoryBytes || 0)}</div>
               </div>
-              <span className="text-[10px] uppercase tracking-wide bg-slate-700 text-white px-2 py-0.5 rounded">{data.containerCount} containers</span>
+              <span className="text-[10px] uppercase tracking-wide bg-yellow-500 text-black px-2 py-0.5 rounded">{data.containerCount} containers</span>
               <button
                 type="button"
                 onMouseDown={handleCollapseMouseDown}
                 onClick={handleCollapseClick}
-                className="nodrag nopan text-white bg-slate-700 hover:bg-slate-600 rounded p-1 leading-none"
+                className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 rounded p-1 leading-none"
                 aria-label={data.collapsed ? 'Expand section' : 'Collapse section'}
                 title={data.collapsed ? 'Expand section' : 'Collapse section'}
               >

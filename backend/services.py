@@ -340,10 +340,15 @@ class ApplicationAggregationService:
         payload.append(unassigned)
 
         total_cpu = sum((item.get("resourceUsage") or {}).get("cpuPercent", 0.0) for item in payload)
+        total_memory = sum((item.get("resourceUsage") or {}).get("memoryBytes", 0) for item in payload)
         for item in payload:
-            app_cpu = (item.get("resourceUsage") or {}).get("cpuPercent", 0.0)
-            share = (app_cpu / total_cpu * 100.0) if total_cpu > 0 else 0.0
-            item["resourceUsage"]["sharePercent"] = round(share, 2)
+            usage = item.get("resourceUsage") or {}
+            app_cpu = usage.get("cpuPercent", 0.0)
+            app_memory = usage.get("memoryBytes", 0)
+            cpu_share = (app_cpu / total_cpu * 100.0) if total_cpu > 0 else 0.0
+            memory_share = (app_memory / total_memory * 100.0) if total_memory > 0 else 0.0
+            item["resourceUsage"]["sharePercent"] = round(cpu_share, 2)
+            item["resourceUsage"]["memorySharePercent"] = round(memory_share, 2)
 
         payload.sort(key=lambda item: (item.get("resourceUsage", {}).get("sharePercent", 0.0), item.get("name", "").lower()), reverse=True)
         return payload
