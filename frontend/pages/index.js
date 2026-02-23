@@ -408,6 +408,39 @@ export default function Home() {
     }
   }, [fetchApplications, updateActionState]);
 
+  const fetchLogsForContainer = useCallback(async (id) => {
+    if (!id) return;
+    try {
+      const res = await fetch(`/api/containers/${id}/logs`);
+      if (!res.ok) {
+        let msg = res.statusText;
+        try {
+          const data = await res.json();
+          msg = data.error || JSON.stringify(data);
+        } catch {}
+        setLogState((prev) => ({ ...prev, error: msg, loading: false }));
+        return;
+      }
+      const data = await res.json();
+      setLogState((prev) => ({ ...prev, logs: data.logs || '', error: null, loading: false }));
+    } catch (err) {
+      setLogState((prev) => ({ ...prev, error: err.message, loading: false }));
+    }
+  }, []);
+
+  const showLogs = useCallback(async (id, name) => {
+    setLogState({ open: true, id, name, logs: '', error: null, loading: true });
+    fetchLogsForContainer(id);
+  }, [fetchLogsForContainer]);
+
+  const closeLogs = useCallback(() => {
+    if (logsIntervalRef.current) {
+      clearInterval(logsIntervalRef.current);
+      logsIntervalRef.current = null;
+    }
+    setLogState({ open: false, id: null, name: '', logs: '', error: null, loading: false });
+  }, []);
+
   useEffect(() => {
     const mapped = [];
     const generatedEdges = [];
@@ -497,38 +530,6 @@ export default function Home() {
   }, [actionState, applications, branchState, collapsedApps, fetchApplicationBranches, handleAction, handleDeleteImage, pullApplicationBranch, showLogs, toggleCollapse, updateBranchState]);
 
 
-  const fetchLogsForContainer = useCallback(async (id) => {
-    if (!id) return;
-    try {
-      const res = await fetch(`/api/containers/${id}/logs`);
-      if (!res.ok) {
-        let msg = res.statusText;
-        try {
-          const data = await res.json();
-          msg = data.error || JSON.stringify(data);
-        } catch {}
-        setLogState((prev) => ({ ...prev, error: msg, loading: false }));
-        return;
-      }
-      const data = await res.json();
-      setLogState((prev) => ({ ...prev, logs: data.logs || '', error: null, loading: false }));
-    } catch (err) {
-      setLogState((prev) => ({ ...prev, error: err.message, loading: false }));
-    }
-  }, []);
-
-  const showLogs = useCallback(async (id, name) => {
-    setLogState({ open: true, id, name, logs: '', error: null, loading: true });
-    fetchLogsForContainer(id);
-  }, [fetchLogsForContainer]);
-
-  const closeLogs = useCallback(() => {
-    if (logsIntervalRef.current) {
-      clearInterval(logsIntervalRef.current);
-      logsIntervalRef.current = null;
-    }
-    setLogState({ open: false, id: null, name: '', logs: '', error: null, loading: false });
-  }, []);
 
   useEffect(() => { fetchApplications(); }, [fetchApplications]);
 
