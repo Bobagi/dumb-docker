@@ -88,6 +88,47 @@ function ApplicationNode({ data }) {
                 {data.gitBranch || 'unknown'} {data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}
               </div>
             )}
+            <div className="mt-2 flex items-center gap-1">
+              <select
+                value={data.selectedBranch || ''}
+                onChange={(event) => data.onBranchChange?.(event.target.value)}
+                className="nodrag nopan bg-black border border-yellow-400 text-yellow-100 text-[11px] rounded px-2 py-1 min-w-0 flex-1"
+                title="Select branch"
+              >
+                {(data.availableBranches || []).map((branch) => (
+                  <option key={branch} value={branch}>{branch}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onMouseDown={handleCollapseMouseDown}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  data.onRefreshBranches?.();
+                }}
+                className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 rounded px-2 py-1 text-[11px]"
+                disabled={data.branchLoading}
+                title="Refresh branches"
+              >
+                {data.branchLoading ? '…' : '↻'}
+              </button>
+              <button
+                type="button"
+                onMouseDown={handleCollapseMouseDown}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  data.onPullBranch?.(data.applicationId);
+                }}
+                className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 rounded px-2 py-1 text-[11px]"
+                disabled={data.branchPulling || !data.selectedBranch}
+                title="Git pull selected branch"
+              >
+                {data.branchPulling ? 'Pull…' : 'Pull'}
+              </button>
+            </div>
+            {data.branchError && <div className="text-red-400 text-[11px] mt-1 break-words">{data.branchError}</div>}
           </div>
           <div className="flex items-start gap-2">
             <UsagePie label="CPU" sharePercent={data.resourceUsage?.sharePercent || 0} />
@@ -201,6 +242,7 @@ export default function Home() {
   const [applications, setApplications] = useState([]);
   const [collapsedApps, setCollapsedApps] = useState({});
   const [actionState, setActionState] = useState({});
+  const [branchState, setBranchState] = useState({});
   const [logState, setLogState] = useState({ open: false, id: null, name: '', logs: '', error: null, loading: false });
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [highlightedContainerId, setHighlightedContainerId] = useState(null);
@@ -210,6 +252,33 @@ export default function Home() {
   const updateActionState = useCallback((id, newState) => {
     setActionState((prev) => ({ ...prev, [id]: { ...prev[id], ...newState } }));
   }, []);
+
+  const updateBranchState = useCallback((id, newState) => {
+    setBranchState((prev) => ({ ...prev, [id]: { ...prev[id], ...newState } }));
+  }, []);
+
+  const fetchApplicationBranches = useCallback(async (appId) => {
+    updateBranchState(appId, { loading: true, error: null });
+    try {
+      const response = await fetch(`/api/applications/${appId}/branches`);
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.detail || payload?.error || response.statusText);
+      }
+      const branches = Array.isArray(payload?.branches) ? payload.branches : [];
+      const currentBranch = payload?.currentBranch || null;
+      updateBranchState(appId, {
+        loading: false,
+        error: null,
+        branches,
+        selectedBranch: currentBranch || branches[0] || '',
+      });
+      return { branches, currentBranch };
+    } catch (err) {
+      updateBranchState(appId, { loading: false, error: err.message || 'Failed to load branches.' });
+      return null;
+    }
+  }, [updateBranchState]);
 
   const toggleCollapse = useCallback((appId) => {
     setCollapsedApps((prev) => ({ ...prev, [appId]: !prev[appId] }));
@@ -254,6 +323,15 @@ export default function Home() {
             containerCount,
             width: calculatedWidth,
             height: appHeight,
+            availableBranches: branchState[app.id]?.branches || (app.gitBranch ? [app.gitBranch] : []),
+            selectedBranch: branchState[app.id]?.selectedBranch || app.gitBranch || '',
+            branchLoading: !!branchState[app.id]?.loading,
+            branchPulling: !!branchState[app.id]?.pulling,
+            branchError: branchState[app.id]?.error || null,
+            onBranchChange: (branch) => updateBranchState(app.id, { selectedBranch: branch, error: null }),
+            onRefreshBranches: () => fetchApplicationBranches(app.id),
+            applicationId: app.id,
+            onPullBranch: pullApplicationBranch,
             onToggleCollapse: () => toggleCollapse(app.id),
           },
           draggable: false,
@@ -301,7 +379,7 @@ export default function Home() {
       console.error(err);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actionState, collapsedApps, toggleCollapse]);
+  }, [actionState, branchState, collapsedApps, fetchApplicationBranches, toggleCollapse, updateBranchState]);
 
   const allContainers = useMemo(() => applications.flatMap((app) => app.containers || []), [applications]);
 
@@ -334,6 +412,41 @@ export default function Home() {
     setHighlightedContainerId(containerId);
     highlightTimeoutRef.current = setTimeout(() => setHighlightedContainerId(null), 2000);
   }, [allContainers, nodes, reactFlowInstance]);
+
+  const pullApplicationBranch = useCallback(async (appId) => {
+    const selectedBranch = branchState[appId]?.selectedBranch;
+    if (!selectedBranch) {
+      updateBranchState(appId, { error: 'Select a branch before pulling.' });
+      return;
+    }
+    updateBranchState(appId, { pulling: true, error: null });
+    try {
+      const response = await fetch(`/api/applications/${appId}/pull`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ branch: selectedBranch }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.detail || payload?.error || response.statusText);
+      }
+
+      updateBranchState(appId, {
+        pulling: false,
+        error: null,
+        selectedBranch: payload?.branch || selectedBranch,
+      });
+      setApplications((prev) => prev.map((app) => (
+        app.id === appId
+          ? { ...app, gitBranch: payload?.branch || app.gitBranch, gitCommit: payload?.commit || app.gitCommit }
+          : app
+      )));
+      fetchApplications();
+      fetchApplicationBranches(appId);
+    } catch (err) {
+      updateBranchState(appId, { pulling: false, error: err.message || 'Failed to pull branch.' });
+    }
+  }, [branchState, fetchApplicationBranches, fetchApplications, updateBranchState]);
 
   const handleAction = useCallback(async (id, action) => {
     updateActionState(id, { loadingAction: action, error: null });
@@ -409,6 +522,13 @@ export default function Home() {
   }, []);
 
   useEffect(() => { fetchApplications(); }, [fetchApplications]);
+
+  useEffect(() => {
+    applications.forEach((app) => {
+      if (branchState[app.id]?.branches?.length) return;
+      fetchApplicationBranches(app.id);
+    });
+  }, [applications, branchState, fetchApplicationBranches]);
 
   useEffect(() => {
     if (!logState.open || !logState.id) {

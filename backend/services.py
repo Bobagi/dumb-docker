@@ -110,21 +110,30 @@ class DockerService:
 
 
 class GitMetadataService:
-    def _run_git(self, args: List[str], cwd: Path) -> Optional[str]:
+    def _run_git_with_result(self, args: List[str], cwd: Path, timeout: int = 8) -> Tuple[bool, Optional[str], Optional[str]]:
         try:
             result = subprocess.run(
                 ["git", "-c", f"safe.directory={cwd}", *args],
                 cwd=str(cwd),
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=timeout,
                 check=False,
             )
-            if result.returncode != 0:
-                return None
-            return result.stdout.strip() or None
-        except (subprocess.SubprocessError, FileNotFoundError):
+        except (subprocess.SubprocessError, FileNotFoundError) as exc:
+            return False, None, str(exc)
+
+        output = (result.stdout or "").strip() or None
+        error = (result.stderr or "").strip() or None
+        if result.returncode != 0:
+            return False, output, error
+        return True, output, error
+
+    def _run_git(self, args: List[str], cwd: Path) -> Optional[str]:
+        ok, output, _ = self._run_git_with_result(args, cwd, timeout=5)
+        if not ok:
             return None
+        return output
 
     def read_repo_metadata(self, path: Path) -> Tuple[Optional[str], Optional[str], Optional[str]]:
         remote = self._run_git(["remote", "get-url", "origin"], path)
@@ -165,6 +174,55 @@ class GitMetadataService:
             "ahead": ahead,
             "behind": behind,
             "status": status,
+        }
+
+    def list_active_branches(self, path: Path) -> dict:
+        current_branch = self._run_git(["rev-parse", "--abbrev-ref", "HEAD"], path)
+        self._run_git(["fetch", "--prune", "origin"], path)
+        branches_output = self._run_git(["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"], path)
+        branches: List[str] = []
+        if branches_output:
+            for branch in branches_output.splitlines():
+                normalized = branch.strip()
+                if not normalized or normalized == "origin/HEAD":
+                    continue
+                if normalized.startswith("origin/"):
+                    normalized = normalized[len("origin/") :]
+                if normalized and normalized not in branches:
+                    branches.append(normalized)
+
+        if current_branch and current_branch not in branches:
+            branches.insert(0, current_branch)
+
+        return {"currentBranch": current_branch, "branches": branches}
+
+    def pull_branch(self, path: Path, selected_branch: str) -> dict:
+        active_branch = self._run_git(["rev-parse", "--abbrev-ref", "HEAD"], path)
+        if not selected_branch:
+            return {"ok": False, "error": "No branch was selected."}
+
+        if active_branch != selected_branch:
+            ok, _, err = self._run_git_with_result(["switch", selected_branch], path)
+            if not ok:
+                return {
+                    "ok": False,
+                    "error": err or f"Failed to switch from {active_branch or 'unknown'} to {selected_branch}.",
+                }
+
+        ok, out, err = self._run_git_with_result(["pull", "origin", selected_branch], path, timeout=30)
+        if not ok:
+            return {
+                "ok": False,
+                "error": err or out or f"Failed to pull branch {selected_branch}.",
+            }
+
+        updated_branch = self._run_git(["rev-parse", "--abbrev-ref", "HEAD"], path)
+        updated_commit = self._run_git(["rev-parse", "HEAD"], path)
+        return {
+            "ok": True,
+            "branch": updated_branch,
+            "commit": updated_commit,
+            "output": out or "Already up to date.",
         }
 
 
