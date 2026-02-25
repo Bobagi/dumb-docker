@@ -252,10 +252,24 @@ function estimateNodeHeight(container) {
   return BASE_NODE_HEIGHT + portsHeight;
 }
 
+function normalizeApplicationsPayload(payload) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+  if (payload && Array.isArray(payload.applications)) {
+    return payload.applications;
+  }
+  if (payload && Array.isArray(payload.data)) {
+    return payload.data;
+  }
+  return null;
+}
+
 export default function Home() {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [applications, setApplications] = useState([]);
+  const [applicationsError, setApplicationsError] = useState(null);
   const [collapsedApps, setCollapsedApps] = useState({});
   const [actionState, setActionState] = useState({});
   const [logState, setLogState] = useState({ open: false, id: null, name: '', logs: '', error: null, loading: false });
@@ -327,9 +341,15 @@ export default function Home() {
     try {
       const res = await fetch('/api/applications');
       const data = await res.json();
-      setApplications(Array.isArray(data) ? data : []);
+      const normalized = normalizeApplicationsPayload(data);
+      if (!res.ok || !normalized) {
+        throw new Error(data?.detail || data?.error || 'Invalid applications payload');
+      }
+      setApplications(normalized);
+      setApplicationsError(null);
     } catch (err) {
       console.error(err);
+      setApplicationsError(err.message || 'Failed to load applications');
     }
   }, []);
 
@@ -697,6 +717,7 @@ export default function Home() {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">External Ports</h2>
           <p className="text-[11px] text-gray-500 mt-1">Double-click a port or use Focus to center its container</p>
         </div>
+        {applicationsError && <p className="text-xs text-red-500 break-all">{applicationsError}</p>}
         {externalPorts.length === 0 ? <p className="text-xs text-gray-500">No external ports available.</p> : (
           <ul className="space-y-2 text-xs">
             {externalPorts.map((port) => {
