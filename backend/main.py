@@ -103,22 +103,24 @@ def _api_error_message(exc: Exception) -> str:
 
 
 @app.post("/api/containers/{container_id}/restart")
-def restart_container(container_id: str):
+async def restart_container(container_id: str):
     container = _get_container_or_404(container_id)
     try:
         container.restart()
     except APIError as exc:
         raise HTTPException(status_code=400, detail=_api_error_message(exc)) from exc
+    await run_application_scan()
     return {"result": "restarted"}
 
 
 @app.post("/api/containers/{container_id}/stop")
-def stop_container(container_id: str):
+async def stop_container(container_id: str):
     container = _get_container_or_404(container_id)
     try:
         container.stop()
     except APIError as exc:
         raise HTTPException(status_code=400, detail=_api_error_message(exc)) from exc
+    await run_application_scan()
     return {"result": "stopped"}
 
 
@@ -133,7 +135,7 @@ def container_logs(container_id: str):
 
 
 @app.delete("/api/containers/{container_id}/delete-image")
-def delete_container_image(container_id: str):
+async def delete_container_image(container_id: str):
     try:
         container = client.containers.get(container_id)
     except NotFound as exc:
@@ -159,6 +161,7 @@ def delete_container_image(container_id: str):
     except APIError as exc:
         raise HTTPException(status_code=400, detail=str(getattr(exc, "explanation", exc))) from exc
 
+    await run_application_scan()
     return {"result": "image_deleted"}
 
 
@@ -228,4 +231,5 @@ async def run_application_compose(application_id: str, payload: dict):
     result = await asyncio.to_thread(git_metadata_service.compose_action, Path(path), action)
     if not result.get("ok"):
         raise HTTPException(status_code=400, detail=result.get("error") or "Compose action failed")
+    await run_application_scan()
     return result
