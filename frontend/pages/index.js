@@ -327,7 +327,7 @@ export default function Home() {
     try {
       const res = await fetch('/api/applications');
       const data = await res.json();
-      setApplications(data);
+      setApplications(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
     }
@@ -424,7 +424,9 @@ export default function Home() {
   }, [fetchApplications, refreshBranches]);
 
 
-  const allContainers = useMemo(() => applications.flatMap((app) => app.containers || []), [applications]);
+  const safeApplications = useMemo(() => (Array.isArray(applications) ? applications : []), [applications]);
+
+  const allContainers = useMemo(() => safeApplications.flatMap((app) => app.containers || []), [safeApplications]);
 
   const externalPorts = useMemo(() => {
     const items = [];
@@ -534,7 +536,7 @@ export default function Home() {
     const generatedEdges = [];
     let currentY = 40;
 
-    applications.forEach((app) => {
+    safeApplications.forEach((app) => {
       const appContainers = app.containers || [];
       const collapsed = !!collapsedApps[app.id];
       const containerCount = appContainers.length;
@@ -637,18 +639,18 @@ export default function Home() {
 
     setNodes(mapped);
     setEdges(generatedEdges);
-  }, [actionState, applications, collapsedApps, gitUiState, handleAction, handleDeleteImage, pullBranch, refreshBranches, runComposeAction, showLogs, toggleCollapse]);
+  }, [actionState, collapsedApps, gitUiState, handleAction, handleDeleteImage, pullBranch, refreshBranches, runComposeAction, safeApplications, showLogs, toggleCollapse]);
 
 
   useEffect(() => { fetchApplications(); }, [fetchApplications]);
 
   useEffect(() => {
-    applications.forEach((app) => {
+    safeApplications.forEach((app) => {
       if (app.id === 'unassigned' || !app.path) return;
       if (gitUiState[app.id]?.loadedOnce || gitUiState[app.id]?.branchLoading) return;
       refreshBranches(app.id, app.gitBranch);
     });
-  }, [applications, gitUiState, refreshBranches]);
+  }, [gitUiState, refreshBranches, safeApplications]);
 
   useEffect(() => {
     if (!logState.open || !logState.id) {
