@@ -270,6 +270,19 @@ class GitMetadataService:
 
             command_output = (result.stdout or "").strip()
             command_error = (result.stderr or "").strip()
+
+            if result.returncode != 0 and command[:2] == ["docker", "compose"]:
+                fallback = ["docker-compose", *command[2:]]
+                try:
+                    fallback_result = self._run_command(fallback, path, timeout=240)
+                    if fallback_result.returncode == 0:
+                        command = fallback
+                        result = fallback_result
+                        command_output = (result.stdout or "").strip()
+                        command_error = (result.stderr or "").strip()
+                except (subprocess.SubprocessError, FileNotFoundError):
+                    pass
+
             if command_output:
                 output_lines.append(command_output)
             if command_error:
