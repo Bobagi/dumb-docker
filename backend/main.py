@@ -77,7 +77,6 @@ async def scan_loop():
 async def on_startup():
     global scan_task
     _log_scan_paths()
-    await run_application_scan()
     scan_task = asyncio.create_task(scan_loop())
 
 
@@ -92,24 +91,44 @@ def get_containers():
     return docker_service.list_containers()
 
 
+def _get_container_or_404(container_id: str):
+    try:
+        return client.containers.get(container_id)
+    except NotFound as exc:
+        raise HTTPException(status_code=404, detail="Container not found") from exc
+
+
+def _api_error_message(exc: Exception) -> str:
+    return str(getattr(exc, "explanation", exc))
+
+
 @app.post("/api/containers/{container_id}/restart")
 def restart_container(container_id: str):
-    container = client.containers.get(container_id)
-    container.restart()
+    container = _get_container_or_404(container_id)
+    try:
+        container.restart()
+    except APIError as exc:
+        raise HTTPException(status_code=400, detail=_api_error_message(exc)) from exc
     return {"result": "restarted"}
 
 
 @app.post("/api/containers/{container_id}/stop")
 def stop_container(container_id: str):
-    container = client.containers.get(container_id)
-    container.stop()
+    container = _get_container_or_404(container_id)
+    try:
+        container.stop()
+    except APIError as exc:
+        raise HTTPException(status_code=400, detail=_api_error_message(exc)) from exc
     return {"result": "stopped"}
 
 
 @app.get("/api/containers/{container_id}/logs")
 def container_logs(container_id: str):
-    container = client.containers.get(container_id)
-    logs = container.logs(tail=200).decode("utf-8", errors="ignore")
+    container = _get_container_or_404(container_id)
+    try:
+        logs = container.logs(tail=200).decode("utf-8", errors="ignore")
+    except APIError as exc:
+        raise HTTPException(status_code=400, detail=_api_error_message(exc)) from exc
     return {"logs": logs}
 
 
