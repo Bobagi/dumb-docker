@@ -110,16 +110,29 @@ class DockerService:
 
 
 class GitMetadataService:
+    def _run_git_command(self, args: List[str], cwd: Path, timeout: int = 10) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", "-c", f"safe.directory={cwd}", *args],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+
+    def _run_command(self, args: List[str], cwd: Path, timeout: int = 30) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            args,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+
     def _run_git(self, args: List[str], cwd: Path) -> Optional[str]:
         try:
-            result = subprocess.run(
-                ["git", "-c", f"safe.directory={cwd}", *args],
-                cwd=str(cwd),
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
+            result = self._run_git_command(args, cwd, timeout=5)
             if result.returncode != 0:
                 return None
             return result.stdout.strip() or None
@@ -165,6 +178,124 @@ class GitMetadataService:
             "ahead": ahead,
             "behind": behind,
             "status": status,
+        }
+
+    def list_remote_branches(self, path: Path) -> dict:
+        current_branch = self._run_git(["rev-parse", "--abbrev-ref", "HEAD"], path)
+        self._run_git(["fetch", "origin", "--prune"], path)
+        remote_output = self._run_git(["ls-remote", "--heads", "origin"], path)
+        branches = []
+        if remote_output:
+            for line in remote_output.splitlines():
+                parts = line.strip().split() 
+                if len(parts) < 2:
+                    continue
+                ref = parts[1]
+                if not ref.startswith("refs/heads/"):
+                    continue
+                branches.append(ref.replace("refs/heads/", "", 1))
+
+        branches = sorted(set(branches))
+        if current_branch and current_branch not in branches:
+            branches.insert(0, current_branch)
+
+        return {
+            "currentBranch": current_branch,
+            "branches": branches,
+        }
+
+    def pull_branch(self, path: Path, selected_branch: str) -> dict:
+        if not selected_branch:
+            return {"ok": False, "error": "No branch selected"}
+
+        current_branch = self._run_git(["rev-parse", "--abbrev-ref", "HEAD"], path)
+        if not current_branch:
+            return {"ok": False, "error": "Unable to determine current branch"}
+
+        if current_branch != selected_branch:
+            try:
+                switch_result = self._run_git_command(["switch", selected_branch], path)
+            except (subprocess.SubprocessError, FileNotFoundError) as exc:
+                return {"ok": False, "error": str(exc)}
+
+            if switch_result.returncode != 0:
+                message = switch_result.stderr.strip() or switch_result.stdout.strip() or "Failed to switch branch"
+                return {"ok": False, "error": message, "currentBranch": current_branch}
+            current_branch = selected_branch
+
+        try:
+            pull_result = self._run_git_command(["pull", "origin", current_branch], path, timeout=30)
+        except (subprocess.SubprocessError, FileNotFoundError) as exc:
+            return {"ok": False, "error": str(exc), "currentBranch": current_branch}
+
+        if pull_result.returncode != 0:
+            message = pull_result.stderr.strip() or pull_result.stdout.strip() or "Failed to pull branch"
+            return {"ok": False, "error": message, "currentBranch": current_branch}
+
+        commit = self._run_git(["rev-parse", "HEAD"], path)
+        return {
+            "ok": True,
+            "currentBranch": current_branch,
+            "commit": commit,
+            "output": pull_result.stdout.strip(),
+        }
+
+    def compose_action(self, path: Path, action: str) -> dict:
+        if action not in {"start", "stop"}:
+            return {"ok": False, "error": "Invalid compose action"}
+
+        commands = [["docker", "compose"]]
+        if action == "start":
+            command_set = [[*commands[0], "up", "--build", "-d"]]
+        else:
+            command_set = [[*commands[0], "stop"]]
+
+        output_lines = []
+        for command in command_set:
+            try:
+                result = self._run_command(command, path, timeout=240)
+            except (subprocess.SubprocessError, FileNotFoundError):
+                if command[:2] == ["docker", "compose"]:
+                    fallback = ["docker-compose", *command[2:]]
+                    try:
+                        result = self._run_command(fallback, path, timeout=240)
+                        command = fallback
+                    except (subprocess.SubprocessError, FileNotFoundError) as exc:
+                        return {"ok": False, "error": str(exc)}
+                else:
+                    return {"ok": False, "error": "Failed to run compose command"}
+
+            command_output = (result.stdout or "").strip()
+            command_error = (result.stderr or "").strip()
+
+            if result.returncode != 0 and command[:2] == ["docker", "compose"]:
+                fallback = ["docker-compose", *command[2:]]
+                try:
+                    fallback_result = self._run_command(fallback, path, timeout=240)
+                    if fallback_result.returncode == 0:
+                        command = fallback
+                        result = fallback_result
+                        command_output = (result.stdout or "").strip()
+                        command_error = (result.stderr or "").strip()
+                except (subprocess.SubprocessError, FileNotFoundError):
+                    pass
+
+            if command_output:
+                output_lines.append(command_output)
+            if command_error:
+                output_lines.append(command_error)
+            if result.returncode != 0:
+                message = command_error or command_output or f"Command failed: {' '.join(command)}"
+                return {"ok": False, "error": message}
+
+        branch = self._run_git(["rev-parse", "--abbrev-ref", "HEAD"], path)
+        commit = self._run_git(["rev-parse", "HEAD"], path)
+        return {
+            "ok": True,
+            "action": action,
+            "branch": branch,
+            "commit": commit,
+            "output": "\n".join(output_lines).strip(),
         }
 
 

@@ -57,6 +57,7 @@ function UsagePie({ label, sharePercent }) {
 
 function ApplicationNode({ data }) {
   const githubUrl = normalizeGitRemoteUrl(data.gitRemoteUrl);
+  const branchOptions = data.branchOptions || [];
 
   const handleCollapseMouseDown = (event) => {
     event.preventDefault();
@@ -88,6 +89,60 @@ function ApplicationNode({ data }) {
                 {data.gitBranch || 'unknown'} {data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}
               </div>
             )}
+            <div className="mt-2 flex items-center gap-2">
+              <select
+                value={data.selectedBranch || ''}
+                onChange={(event) => data.onSelectBranch?.(event.target.value)}
+                disabled={data.operationInProgress || branchOptions.length === 0}
+                className="nodrag nopan flex-1 text-[11px] bg-black border border-yellow-400 text-yellow-100 rounded px-2 py-1"
+              >
+                {branchOptions.length === 0 ? (
+                  <option value="">No branches</option>
+                ) : (
+                  branchOptions.map((branch) => (
+                    <option key={branch} value={branch}>{branch}</option>
+                  ))
+                )}
+              </select>
+              <button
+                type="button"
+                onMouseDown={handleCollapseMouseDown}
+                onClick={data.onRefreshBranches}
+                disabled={data.operationInProgress}
+                className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+                title="Refresh branches"
+              >
+                ⟳
+              </button>
+              <button
+                type="button"
+                onMouseDown={handleCollapseMouseDown}
+                onClick={data.onPullBranch}
+                disabled={data.operationInProgress || !data.selectedBranch}
+                className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+              >
+                {data.pullLoading ? 'Pulling...' : 'Pull'}
+              </button>
+              <button
+                type="button"
+                onMouseDown={handleCollapseMouseDown}
+                onClick={data.onComposeStart}
+                disabled={data.operationInProgress}
+                className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+              >
+                {data.composeLoading === 'start' ? 'Starting...' : 'Start'}
+              </button>
+              <button
+                type="button"
+                onMouseDown={handleCollapseMouseDown}
+                onClick={data.onComposeStop}
+                disabled={data.operationInProgress}
+                className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+              >
+                {data.composeLoading === 'stop' ? 'Stopping...' : 'Stop'}
+              </button>
+            </div>
+            {data.gitError && <div className="text-[11px] text-red-400 mt-1 break-all">{data.gitError}</div>}
           </div>
           <div className="flex items-start gap-2">
             <UsagePie label="CPU" sharePercent={data.resourceUsage?.sharePercent || 0} />
@@ -183,11 +238,13 @@ const BASE_NODE_HEIGHT = 240;
 const PORT_LINE_HEIGHT = 18;
 const PORT_SECTION_PADDING = 12;
 const ROW_VERTICAL_GAP = 40;
-const APP_HEADER_HEIGHT = 120;
+const APP_HEADER_HEIGHT = 170;
 const NODE_WIDTH = 192;
 const HORIZONTAL_GAP = 28;
 const GROUP_PADDING = 20;
 const APP_MIN_WIDTH = 620;
+const APP_MAX_WIDTH = 1380;
+const MAX_CONTAINERS_PER_ROW = 6;
 
 function estimateNodeHeight(container) {
   const portCount = container?.ports?.length || 0;
@@ -195,15 +252,39 @@ function estimateNodeHeight(container) {
   return BASE_NODE_HEIGHT + portsHeight;
 }
 
+function normalizeApplicationsPayload(payload) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+  if (payload && Array.isArray(payload.applications)) {
+    return payload.applications;
+  }
+  if (payload && Array.isArray(payload.data)) {
+    return payload.data;
+  }
+  return null;
+}
+
+async function readJsonSafe(response) {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: text };
+  }
+}
+
 export default function Home() {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [applications, setApplications] = useState([]);
+  const [applicationsError, setApplicationsError] = useState(null);
   const [collapsedApps, setCollapsedApps] = useState({});
   const [actionState, setActionState] = useState({});
   const [logState, setLogState] = useState({ open: false, id: null, name: '', logs: '', error: null, loading: false });
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [highlightedContainerId, setHighlightedContainerId] = useState(null);
+  const [gitUiState, setGitUiState] = useState({});
   const highlightTimeoutRef = useRef(null);
   const logsIntervalRef = useRef(null);
 
@@ -215,95 +296,168 @@ export default function Home() {
     setCollapsedApps((prev) => ({ ...prev, [appId]: !prev[appId] }));
   }, []);
 
+  const refreshBranches = useCallback(async (appId, currentBranch) => {
+    if (!appId || appId === 'unassigned') return;
+    setGitUiState((prev) => ({
+      ...prev,
+      [appId]: {
+        ...(prev[appId] || {}),
+        branchLoading: true,
+        gitError: null,
+      },
+    }));
+
+    try {
+      const response = await fetch(`/api/applications/${appId}/branches`);
+      const data = await readJsonSafe(response);
+      if (!response.ok) {
+        throw new Error(data?.detail || data?.error || response.statusText);
+      }
+
+      const branches = Array.isArray(data?.branches) ? data.branches : [];
+      const activeBranch = data?.currentBranch || currentBranch || branches[0] || '';
+      setGitUiState((prev) => {
+        const previousSelected = prev[appId]?.selectedBranch;
+        const selectedBranch = branches.includes(previousSelected)
+          ? previousSelected
+          : (branches.includes(activeBranch) ? activeBranch : branches[0] || '');
+        return {
+          ...prev,
+          [appId]: {
+            ...(prev[appId] || {}),
+            branchOptions: branches,
+            selectedBranch,
+            branchLoading: false,
+            loadedOnce: true,
+            gitError: null,
+          },
+        };
+      });
+    } catch (err) {
+      setGitUiState((prev) => ({
+        ...prev,
+        [appId]: {
+          ...(prev[appId] || {}),
+          branchLoading: false,
+          loadedOnce: true,
+          gitError: err.message,
+        },
+      }));
+    }
+  }, []);
+
   const fetchApplications = useCallback(async () => {
     try {
       const res = await fetch('/api/applications');
       const data = await res.json();
-      setApplications(data);
-
-      const mapped = [];
-      const generatedEdges = [];
-      let currentY = 40;
-
-      data.forEach((app) => {
-        const appContainers = app.containers || [];
-        const collapsed = !!collapsedApps[app.id];
-        const containerCount = appContainers.length;
-
-        const calculatedWidth = Math.max(
-          APP_MIN_WIDTH,
-          GROUP_PADDING * 2 + Math.max(1, containerCount) * NODE_WIDTH + Math.max(0, containerCount - 1) * HORIZONTAL_GAP
-        );
-
-        let appHeight = APP_HEADER_HEIGHT + 12;
-        if (!collapsed && containerCount > 0) {
-          let tallestContainer = BASE_NODE_HEIGHT;
-          appContainers.forEach((container) => {
-            tallestContainer = Math.max(tallestContainer, estimateNodeHeight(container));
-          });
-          appHeight = APP_HEADER_HEIGHT + GROUP_PADDING + tallestContainer + GROUP_PADDING;
-        }
-
-        mapped.push({
-          id: `app-${app.id}`,
-          type: 'application',
-          position: { x: 40, y: currentY },
-          data: {
-            ...app,
-            collapsed,
-            containerCount,
-            width: calculatedWidth,
-            height: appHeight,
-            onToggleCollapse: () => toggleCollapse(app.id),
-          },
-          draggable: false,
-          selectable: true,
-        });
-
-        if (!collapsed) {
-          appContainers.forEach((c, i) => {
-            mapped.push({
-              id: c.id,
-              type: 'container',
-              position: {
-                x: 40 + GROUP_PADDING + i * (NODE_WIDTH + HORIZONTAL_GAP),
-                y: currentY + APP_HEADER_HEIGHT + GROUP_PADDING,
-              },
-              data: {
-                ...c,
-                containerId: c.id,
-                onRestart: () => handleAction(c.id, 'restart'),
-                onStop: () => handleAction(c.id, 'stop'),
-                onShowLogs: () => showLogs(c.id, c.name),
-                onDeleteImage: () => handleDeleteImage(c.id),
-                loadingAction: actionState[c.id]?.loadingAction,
-                error: actionState[c.id]?.error,
-              },
-            });
-          });
-
-          for (let i = 0; i < appContainers.length - 1; i++) {
-            generatedEdges.push({
-              id: `${appContainers[i].id}-${appContainers[i + 1].id}`,
-              source: appContainers[i].id,
-              target: appContainers[i + 1].id,
-              style: { stroke: '#ffd500' },
-            });
-          }
-        }
-
-        currentY += appHeight + ROW_VERTICAL_GAP;
-      });
-
-      setNodes(mapped);
-      setEdges(generatedEdges);
+      const normalized = normalizeApplicationsPayload(data);
+      if (!res.ok || !normalized) {
+        throw new Error(data?.detail || data?.error || 'Invalid applications payload');
+      }
+      setApplications(normalized);
+      setApplicationsError(null);
     } catch (err) {
       console.error(err);
+      setApplicationsError(err.message || 'Failed to load applications');
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actionState, collapsedApps, toggleCollapse]);
+  }, []);
 
-  const allContainers = useMemo(() => applications.flatMap((app) => app.containers || []), [applications]);
+  const pullBranch = useCallback(async (appId, selectedBranch) => {
+    if (!selectedBranch) return;
+
+    setGitUiState((prev) => ({
+      ...prev,
+      [appId]: {
+        ...(prev[appId] || {}),
+        pullLoading: true,
+        gitError: null,
+      },
+    }));
+
+    try {
+      const response = await fetch(`/api/applications/${appId}/pull`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ branch: selectedBranch }),
+      });
+      const data = await readJsonSafe(response);
+      if (!response.ok) {
+        throw new Error(data?.detail || data?.error || response.statusText);
+      }
+
+      setGitUiState((prev) => ({
+        ...prev,
+        [appId]: {
+          ...(prev[appId] || {}),
+          pullLoading: false,
+          gitError: null,
+        },
+      }));
+      await fetchApplications();
+      await refreshBranches(appId, selectedBranch);
+    } catch (err) {
+      setGitUiState((prev) => ({
+        ...prev,
+        [appId]: {
+          ...(prev[appId] || {}),
+          pullLoading: false,
+          gitError: err.message,
+        },
+      }));
+    }
+  }, [fetchApplications, refreshBranches]);
+
+
+  const runComposeAction = useCallback(async (appId, action, selectedBranch) => {
+    if (!appId || appId === 'unassigned') return;
+    setGitUiState((prev) => ({
+      ...prev,
+      [appId]: {
+        ...(prev[appId] || {}),
+        composeLoading: action,
+        gitError: null,
+      },
+    }));
+
+    try {
+      const response = await fetch(`/api/applications/${appId}/compose`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      const data = await readJsonSafe(response);
+      if (!response.ok) {
+        throw new Error(data?.detail || data?.error || response.statusText);
+      }
+
+      setGitUiState((prev) => ({
+        ...prev,
+        [appId]: {
+          ...(prev[appId] || {}),
+          composeLoading: null,
+          gitError: null,
+        },
+      }));
+      await fetchApplications();
+      await refreshBranches(appId, data?.branch || selectedBranch);
+    } catch (err) {
+      setGitUiState((prev) => ({
+        ...prev,
+        [appId]: {
+          ...(prev[appId] || {}),
+          composeLoading: null,
+          gitError: err.message,
+        },
+      }));
+    }
+  }, [fetchApplications, refreshBranches]);
+
+
+  const safeApplications = useMemo(() => (Array.isArray(applications) ? applications : []), [applications]);
+
+  const allContainers = useMemo(() => safeApplications.flatMap((app) => app.containers || []), [safeApplications]);
+
+  const nodeTypes = useMemo(() => ({ container: ContainerNode, application: ApplicationNode }), []);
 
   const externalPorts = useMemo(() => {
     const items = [];
@@ -408,7 +562,135 @@ export default function Home() {
     setLogState({ open: false, id: null, name: '', logs: '', error: null, loading: false });
   }, []);
 
+  useEffect(() => {
+    const mapped = [];
+    const generatedEdges = [];
+    let currentY = 40;
+
+    safeApplications.forEach((app) => {
+      const appContainers = app.containers || [];
+      const collapsed = !!collapsedApps[app.id];
+      const containerCount = appContainers.length;
+      const rowSize = Math.min(MAX_CONTAINERS_PER_ROW, Math.max(containerCount, 1));
+      const rowCount = Math.max(1, Math.ceil(containerCount / MAX_CONTAINERS_PER_ROW));
+
+      const idealWidth = GROUP_PADDING * 2 + rowSize * NODE_WIDTH + Math.max(0, rowSize - 1) * HORIZONTAL_GAP;
+      const calculatedWidth = Math.max(APP_MIN_WIDTH, Math.min(APP_MAX_WIDTH, idealWidth));
+
+      let appHeight = APP_HEADER_HEIGHT + 12;
+      if (!collapsed && containerCount > 0) {
+        const rowHeights = Array.from({ length: rowCount }, () => BASE_NODE_HEIGHT);
+        appContainers.forEach((container, index) => {
+          const rowIndex = Math.floor(index / MAX_CONTAINERS_PER_ROW);
+          rowHeights[rowIndex] = Math.max(rowHeights[rowIndex], estimateNodeHeight(container));
+        });
+        const containersHeight = rowHeights.reduce((acc, value) => acc + value, 0) + Math.max(0, rowCount - 1) * GROUP_PADDING;
+        appHeight = APP_HEADER_HEIGHT + GROUP_PADDING + containersHeight + GROUP_PADDING;
+      }
+
+      mapped.push({
+        id: `app-${app.id}`,
+        type: 'application',
+        position: { x: 40, y: currentY },
+        data: {
+          ...app,
+          collapsed,
+          containerCount,
+          width: calculatedWidth,
+          height: appHeight,
+          branchOptions: gitUiState[app.id]?.branchOptions || [],
+          selectedBranch: gitUiState[app.id]?.selectedBranch || app.gitBranch || '',
+          branchLoading: gitUiState[app.id]?.branchLoading || false,
+          pullLoading: gitUiState[app.id]?.pullLoading || false,
+          composeLoading: gitUiState[app.id]?.composeLoading || null,
+          gitError: gitUiState[app.id]?.gitError || null,
+          operationInProgress: !!(gitUiState[app.id]?.branchLoading || gitUiState[app.id]?.pullLoading || gitUiState[app.id]?.composeLoading),
+          onSelectBranch: (branch) => setGitUiState((prev) => ({
+            ...prev,
+            [app.id]: {
+              ...(prev[app.id] || {}),
+              selectedBranch: branch,
+              gitError: null,
+            },
+          })),
+          onRefreshBranches: () => refreshBranches(app.id, app.gitBranch),
+          onPullBranch: () => pullBranch(app.id, gitUiState[app.id]?.selectedBranch || app.gitBranch || ''),
+          onComposeStart: () => runComposeAction(app.id, 'start', gitUiState[app.id]?.selectedBranch || app.gitBranch || ''),
+          onComposeStop: () => runComposeAction(app.id, 'stop', gitUiState[app.id]?.selectedBranch || app.gitBranch || ''),
+          onToggleCollapse: () => toggleCollapse(app.id),
+        },
+        draggable: false,
+        selectable: true,
+      });
+
+      if (!collapsed) {
+        const rowHeights = [];
+        appContainers.forEach((container, index) => {
+          const rowIndex = Math.floor(index / MAX_CONTAINERS_PER_ROW);
+          rowHeights[rowIndex] = Math.max(rowHeights[rowIndex] || BASE_NODE_HEIGHT, estimateNodeHeight(container));
+        });
+
+        appContainers.forEach((c, i) => {
+          const rowIndex = Math.floor(i / MAX_CONTAINERS_PER_ROW);
+          const colIndex = i % MAX_CONTAINERS_PER_ROW;
+          const yOffset = rowHeights
+            .slice(0, rowIndex)
+            .reduce((acc, value) => acc + value + GROUP_PADDING, 0);
+          mapped.push({
+            id: c.id,
+            type: 'container',
+            position: {
+              x: 40 + GROUP_PADDING + colIndex * (NODE_WIDTH + HORIZONTAL_GAP),
+              y: currentY + APP_HEADER_HEIGHT + GROUP_PADDING + yOffset,
+            },
+            data: {
+              ...c,
+              containerId: c.id,
+              onRestart: () => handleAction(c.id, 'restart'),
+              onStop: () => handleAction(c.id, 'stop'),
+              onShowLogs: () => showLogs(c.id, c.name),
+              onDeleteImage: () => handleDeleteImage(c.id),
+              loadingAction: actionState[c.id]?.loadingAction,
+              error: actionState[c.id]?.error,
+            },
+          });
+        });
+
+        for (let i = 0; i < appContainers.length - 1; i++) {
+          generatedEdges.push({
+            id: `${appContainers[i].id}-${appContainers[i + 1].id}`,
+            source: appContainers[i].id,
+            target: appContainers[i + 1].id,
+            style: { stroke: '#ffd500' },
+          });
+        }
+      }
+
+      currentY += appHeight + ROW_VERTICAL_GAP;
+    });
+
+    setNodes(mapped);
+    setEdges(generatedEdges);
+  }, [actionState, collapsedApps, gitUiState, handleAction, handleDeleteImage, pullBranch, refreshBranches, runComposeAction, safeApplications, showLogs, toggleCollapse]);
+
+
   useEffect(() => { fetchApplications(); }, [fetchApplications]);
+
+  useEffect(() => {
+    if (!applicationsError) return undefined;
+    const timer = setTimeout(() => {
+      fetchApplications();
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [applicationsError, fetchApplications]);
+
+  useEffect(() => {
+    safeApplications.forEach((app) => {
+      if (app.id === 'unassigned' || !app.path) return;
+      if (gitUiState[app.id]?.loadedOnce || gitUiState[app.id]?.branchLoading) return;
+      refreshBranches(app.id, app.gitBranch);
+    });
+  }, [gitUiState, refreshBranches, safeApplications]);
 
   useEffect(() => {
     if (!logState.open || !logState.id) {
@@ -440,7 +722,7 @@ export default function Home() {
           <ReactFlow
             nodes={nodes}
             edges={edges}
-            nodeTypes={{ container: ContainerNode, application: ApplicationNode }}
+            nodeTypes={nodeTypes}
             proOptions={{}}
             nodesDraggable={false}
             onInit={setReactFlowInstance}
@@ -455,6 +737,7 @@ export default function Home() {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">External Ports</h2>
           <p className="text-[11px] text-gray-500 mt-1">Double-click a port or use Focus to center its container</p>
         </div>
+        {applicationsError && <p className="text-xs text-red-500 break-all">{applicationsError}</p>}
         {externalPorts.length === 0 ? <p className="text-xs text-gray-500">No external ports available.</p> : (
           <ul className="space-y-2 text-xs">
             {externalPorts.map((port) => {

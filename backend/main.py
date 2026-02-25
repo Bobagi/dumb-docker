@@ -77,7 +77,6 @@ async def scan_loop():
 async def on_startup():
     global scan_task
     _log_scan_paths()
-    await run_application_scan()
     scan_task = asyncio.create_task(scan_loop())
 
 
@@ -92,29 +91,51 @@ def get_containers():
     return docker_service.list_containers()
 
 
+def _get_container_or_404(container_id: str):
+    try:
+        return client.containers.get(container_id)
+    except NotFound as exc:
+        raise HTTPException(status_code=404, detail="Container not found") from exc
+
+
+def _api_error_message(exc: Exception) -> str:
+    return str(getattr(exc, "explanation", exc))
+
+
 @app.post("/api/containers/{container_id}/restart")
-def restart_container(container_id: str):
-    container = client.containers.get(container_id)
-    container.restart()
+async def restart_container(container_id: str):
+    container = _get_container_or_404(container_id)
+    try:
+        container.restart()
+    except APIError as exc:
+        raise HTTPException(status_code=400, detail=_api_error_message(exc)) from exc
+    await run_application_scan()
     return {"result": "restarted"}
 
 
 @app.post("/api/containers/{container_id}/stop")
-def stop_container(container_id: str):
-    container = client.containers.get(container_id)
-    container.stop()
+async def stop_container(container_id: str):
+    container = _get_container_or_404(container_id)
+    try:
+        container.stop()
+    except APIError as exc:
+        raise HTTPException(status_code=400, detail=_api_error_message(exc)) from exc
+    await run_application_scan()
     return {"result": "stopped"}
 
 
 @app.get("/api/containers/{container_id}/logs")
 def container_logs(container_id: str):
-    container = client.containers.get(container_id)
-    logs = container.logs(tail=200).decode("utf-8", errors="ignore")
+    container = _get_container_or_404(container_id)
+    try:
+        logs = container.logs(tail=200).decode("utf-8", errors="ignore")
+    except APIError as exc:
+        raise HTTPException(status_code=400, detail=_api_error_message(exc)) from exc
     return {"logs": logs}
 
 
 @app.delete("/api/containers/{container_id}/delete-image")
-def delete_container_image(container_id: str):
+async def delete_container_image(container_id: str):
     try:
         container = client.containers.get(container_id)
     except NotFound as exc:
@@ -140,6 +161,7 @@ def delete_container_image(container_id: str):
     except APIError as exc:
         raise HTTPException(status_code=400, detail=str(getattr(exc, "explanation", exc))) from exc
 
+    await run_application_scan()
     return {"result": "image_deleted"}
 
 
@@ -166,3 +188,48 @@ async def get_application_git_status(application_id: str):
         raise HTTPException(status_code=400, detail="Application has no filesystem path")
 
     return await asyncio.to_thread(git_metadata_service.get_git_status, Path(path))
+
+
+@app.get("/api/applications/{application_id}/branches")
+async def get_application_branches(application_id: str):
+    app_data = await application_registry.get_application(application_id)
+    if not app_data:
+        raise HTTPException(status_code=404, detail="Application not found")
+    path = app_data.get("path")
+    if not path:
+        raise HTTPException(status_code=400, detail="Application has no filesystem path")
+
+    return await asyncio.to_thread(git_metadata_service.list_remote_branches, Path(path))
+
+
+@app.post("/api/applications/{application_id}/pull")
+async def pull_application_branch(application_id: str, payload: dict):
+    app_data = await application_registry.get_application(application_id)
+    if not app_data:
+        raise HTTPException(status_code=404, detail="Application not found")
+    path = app_data.get("path")
+    if not path:
+        raise HTTPException(status_code=400, detail="Application has no filesystem path")
+
+    branch = (payload or {}).get("branch")
+    result = await asyncio.to_thread(git_metadata_service.pull_branch, Path(path), branch)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error") or "Git pull failed")
+    return result
+
+
+@app.post("/api/applications/{application_id}/compose")
+async def run_application_compose(application_id: str, payload: dict):
+    app_data = await application_registry.get_application(application_id)
+    if not app_data:
+        raise HTTPException(status_code=404, detail="Application not found")
+    path = app_data.get("path")
+    if not path:
+        raise HTTPException(status_code=400, detail="Application has no filesystem path")
+
+    action = (payload or {}).get("action")
+    result = await asyncio.to_thread(git_metadata_service.compose_action, Path(path), action)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error") or "Compose action failed")
+    await run_application_scan()
+    return result
