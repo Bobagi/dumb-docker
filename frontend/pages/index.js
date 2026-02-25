@@ -57,6 +57,7 @@ function UsagePie({ label, sharePercent }) {
 
 function ApplicationNode({ data }) {
   const githubUrl = normalizeGitRemoteUrl(data.gitRemoteUrl);
+  const branchOptions = data.branchOptions || [];
 
   const handleCollapseMouseDown = (event) => {
     event.preventDefault();
@@ -88,6 +89,42 @@ function ApplicationNode({ data }) {
                 {data.gitBranch || 'unknown'} {data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}
               </div>
             )}
+            <div className="mt-2 flex items-center gap-2">
+              <select
+                value={data.selectedBranch || ''}
+                onChange={(event) => data.onSelectBranch?.(event.target.value)}
+                disabled={data.branchLoading || branchOptions.length === 0}
+                className="nodrag nopan flex-1 text-[11px] bg-black border border-yellow-400 text-yellow-100 rounded px-2 py-1"
+              >
+                {branchOptions.length === 0 ? (
+                  <option value="">No branches</option>
+                ) : (
+                  branchOptions.map((branch) => (
+                    <option key={branch} value={branch}>{branch}</option>
+                  ))
+                )}
+              </select>
+              <button
+                type="button"
+                onMouseDown={handleCollapseMouseDown}
+                onClick={data.onRefreshBranches}
+                disabled={data.branchLoading}
+                className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+                title="Refresh branches"
+              >
+                ⟳
+              </button>
+              <button
+                type="button"
+                onMouseDown={handleCollapseMouseDown}
+                onClick={data.onPullBranch}
+                disabled={data.pullLoading || !data.selectedBranch}
+                className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+              >
+                {data.pullLoading ? 'Pulling...' : 'Pull'}
+              </button>
+            </div>
+            {data.gitError && <div className="text-[11px] text-red-400 mt-1 break-all">{data.gitError}</div>}
           </div>
           <div className="flex items-start gap-2">
             <UsagePie label="CPU" sharePercent={data.resourceUsage?.sharePercent || 0} />
@@ -183,7 +220,7 @@ const BASE_NODE_HEIGHT = 240;
 const PORT_LINE_HEIGHT = 18;
 const PORT_SECTION_PADDING = 12;
 const ROW_VERTICAL_GAP = 40;
-const APP_HEADER_HEIGHT = 120;
+const APP_HEADER_HEIGHT = 170;
 const NODE_WIDTH = 192;
 const HORIZONTAL_GAP = 28;
 const GROUP_PADDING = 20;
@@ -204,6 +241,7 @@ export default function Home() {
   const [logState, setLogState] = useState({ open: false, id: null, name: '', logs: '', error: null, loading: false });
   const [reactFlowInstance, setReactFlowInstance] = useState(null);
   const [highlightedContainerId, setHighlightedContainerId] = useState(null);
+  const [gitUiState, setGitUiState] = useState({});
   const highlightTimeoutRef = useRef(null);
   const logsIntervalRef = useRef(null);
 
@@ -213,6 +251,54 @@ export default function Home() {
 
   const toggleCollapse = useCallback((appId) => {
     setCollapsedApps((prev) => ({ ...prev, [appId]: !prev[appId] }));
+  }, []);
+
+  const refreshBranches = useCallback(async (appId, currentBranch) => {
+    if (!appId || appId === 'unassigned') return;
+    setGitUiState((prev) => ({
+      ...prev,
+      [appId]: {
+        ...(prev[appId] || {}),
+        branchLoading: true,
+        gitError: null,
+      },
+    }));
+
+    try {
+      const response = await fetch(`/api/applications/${appId}/branches`);
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.detail || data?.error || response.statusText);
+      }
+
+      const branches = Array.isArray(data?.branches) ? data.branches : [];
+      const activeBranch = data?.currentBranch || currentBranch || branches[0] || '';
+      setGitUiState((prev) => {
+        const previousSelected = prev[appId]?.selectedBranch;
+        const selectedBranch = branches.includes(previousSelected)
+          ? previousSelected
+          : (branches.includes(activeBranch) ? activeBranch : branches[0] || '');
+        return {
+          ...prev,
+          [appId]: {
+            ...(prev[appId] || {}),
+            branchOptions: branches,
+            selectedBranch,
+            branchLoading: false,
+            gitError: null,
+          },
+        };
+      });
+    } catch (err) {
+      setGitUiState((prev) => ({
+        ...prev,
+        [appId]: {
+          ...(prev[appId] || {}),
+          branchLoading: false,
+          gitError: err.message,
+        },
+      }));
+    }
   }, []);
 
   const fetchApplications = useCallback(async () => {
@@ -254,6 +340,21 @@ export default function Home() {
             containerCount,
             width: calculatedWidth,
             height: appHeight,
+            branchOptions: gitUiState[app.id]?.branchOptions || [],
+            selectedBranch: gitUiState[app.id]?.selectedBranch || app.gitBranch || '',
+            branchLoading: gitUiState[app.id]?.branchLoading || false,
+            pullLoading: gitUiState[app.id]?.pullLoading || false,
+            gitError: gitUiState[app.id]?.gitError || null,
+            onSelectBranch: (branch) => setGitUiState((prev) => ({
+              ...prev,
+              [app.id]: {
+                ...(prev[app.id] || {}),
+                selectedBranch: branch,
+                gitError: null,
+              },
+            })),
+            onRefreshBranches: () => refreshBranches(app.id, app.gitBranch),
+            onPullBranch: () => pullBranch(app.id),
             onToggleCollapse: () => toggleCollapse(app.id),
           },
           draggable: false,
@@ -301,7 +402,54 @@ export default function Home() {
       console.error(err);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actionState, collapsedApps, toggleCollapse]);
+  }, [actionState, collapsedApps, gitUiState, refreshBranches, toggleCollapse]);
+
+  const pullBranch = async (appId) => {
+    const appState = gitUiState[appId] || {};
+    if (!appState.selectedBranch) return;
+
+    setGitUiState((prev) => ({
+      ...prev,
+      [appId]: {
+        ...(prev[appId] || {}),
+        pullLoading: true,
+        gitError: null,
+      },
+    }));
+
+    try {
+      const response = await fetch(`/api/applications/${appId}/pull`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ branch: appState.selectedBranch }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.detail || data?.error || response.statusText);
+      }
+
+      setGitUiState((prev) => ({
+        ...prev,
+        [appId]: {
+          ...(prev[appId] || {}),
+          pullLoading: false,
+          gitError: null,
+        },
+      }));
+      await fetchApplications();
+      await refreshBranches(appId, appState.selectedBranch);
+    } catch (err) {
+      setGitUiState((prev) => ({
+        ...prev,
+        [appId]: {
+          ...(prev[appId] || {}),
+          pullLoading: false,
+          gitError: err.message,
+        },
+      }));
+    }
+  };
+
 
   const allContainers = useMemo(() => applications.flatMap((app) => app.containers || []), [applications]);
 
@@ -409,6 +557,14 @@ export default function Home() {
   }, []);
 
   useEffect(() => { fetchApplications(); }, [fetchApplications]);
+
+  useEffect(() => {
+    applications.forEach((app) => {
+      if (app.id === 'unassigned' || !app.path) return;
+      if (gitUiState[app.id]?.branchOptions?.length) return;
+      refreshBranches(app.id, app.gitBranch);
+    });
+  }, [applications, gitUiState, refreshBranches]);
 
   useEffect(() => {
     if (!logState.open || !logState.id) {

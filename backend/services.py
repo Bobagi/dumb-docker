@@ -110,16 +110,19 @@ class DockerService:
 
 
 class GitMetadataService:
+    def _run_git_command(self, args: List[str], cwd: Path, timeout: int = 10) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", "-c", f"safe.directory={cwd}", *args],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+
     def _run_git(self, args: List[str], cwd: Path) -> Optional[str]:
         try:
-            result = subprocess.run(
-                ["git", "-c", f"safe.directory={cwd}", *args],
-                cwd=str(cwd),
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
+            result = self._run_git_command(args, cwd, timeout=5)
             if result.returncode != 0:
                 return None
             return result.stdout.strip() or None
@@ -165,6 +168,54 @@ class GitMetadataService:
             "ahead": ahead,
             "behind": behind,
             "status": status,
+        }
+
+    def list_local_branches(self, path: Path) -> dict:
+        branch = self._run_git(["rev-parse", "--abbrev-ref", "HEAD"], path)
+        branches_output = self._run_git(["for-each-ref", "--format=%(refname:short)", "refs/heads"], path)
+        branches = [item.strip() for item in (branches_output or "").splitlines() if item.strip()]
+        if branch and branch not in branches:
+            branches.insert(0, branch)
+
+        return {
+            "currentBranch": branch,
+            "branches": branches,
+        }
+
+    def pull_branch(self, path: Path, selected_branch: str) -> dict:
+        if not selected_branch:
+            return {"ok": False, "error": "No branch selected"}
+
+        current_branch = self._run_git(["rev-parse", "--abbrev-ref", "HEAD"], path)
+        if not current_branch:
+            return {"ok": False, "error": "Unable to determine current branch"}
+
+        if current_branch != selected_branch:
+            try:
+                switch_result = self._run_git_command(["switch", selected_branch], path)
+            except (subprocess.SubprocessError, FileNotFoundError) as exc:
+                return {"ok": False, "error": str(exc)}
+
+            if switch_result.returncode != 0:
+                message = switch_result.stderr.strip() or switch_result.stdout.strip() or "Failed to switch branch"
+                return {"ok": False, "error": message, "currentBranch": current_branch}
+            current_branch = selected_branch
+
+        try:
+            pull_result = self._run_git_command(["pull", "origin", current_branch], path, timeout=30)
+        except (subprocess.SubprocessError, FileNotFoundError) as exc:
+            return {"ok": False, "error": str(exc), "currentBranch": current_branch}
+
+        if pull_result.returncode != 0:
+            message = pull_result.stderr.strip() or pull_result.stdout.strip() or "Failed to pull branch"
+            return {"ok": False, "error": message, "currentBranch": current_branch}
+
+        commit = self._run_git(["rev-parse", "HEAD"], path)
+        return {
+            "ok": True,
+            "currentBranch": current_branch,
+            "commit": commit,
+            "output": pull_result.stdout.strip(),
         }
 
 

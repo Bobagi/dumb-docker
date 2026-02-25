@@ -166,3 +166,31 @@ async def get_application_git_status(application_id: str):
         raise HTTPException(status_code=400, detail="Application has no filesystem path")
 
     return await asyncio.to_thread(git_metadata_service.get_git_status, Path(path))
+
+
+@app.get("/api/applications/{application_id}/branches")
+async def get_application_branches(application_id: str):
+    app_data = await application_registry.get_application(application_id)
+    if not app_data:
+        raise HTTPException(status_code=404, detail="Application not found")
+    path = app_data.get("path")
+    if not path:
+        raise HTTPException(status_code=400, detail="Application has no filesystem path")
+
+    return await asyncio.to_thread(git_metadata_service.list_local_branches, Path(path))
+
+
+@app.post("/api/applications/{application_id}/pull")
+async def pull_application_branch(application_id: str, payload: dict):
+    app_data = await application_registry.get_application(application_id)
+    if not app_data:
+        raise HTTPException(status_code=404, detail="Application not found")
+    path = app_data.get("path")
+    if not path:
+        raise HTTPException(status_code=400, detail="Application has no filesystem path")
+
+    branch = (payload or {}).get("branch")
+    result = await asyncio.to_thread(git_metadata_service.pull_branch, Path(path), branch)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error") or "Git pull failed")
+    return result
