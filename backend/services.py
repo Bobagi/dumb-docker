@@ -120,6 +120,16 @@ class GitMetadataService:
             check=False,
         )
 
+    def _run_command(self, args: List[str], cwd: Path, timeout: int = 30) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            args,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+
     def _run_git(self, args: List[str], cwd: Path) -> Optional[str]:
         try:
             result = self._run_git_command(args, cwd, timeout=5)
@@ -170,15 +180,27 @@ class GitMetadataService:
             "status": status,
         }
 
-    def list_local_branches(self, path: Path) -> dict:
-        branch = self._run_git(["rev-parse", "--abbrev-ref", "HEAD"], path)
-        branches_output = self._run_git(["for-each-ref", "--format=%(refname:short)", "refs/heads"], path)
-        branches = [item.strip() for item in (branches_output or "").splitlines() if item.strip()]
-        if branch and branch not in branches:
-            branches.insert(0, branch)
+    def list_remote_branches(self, path: Path) -> dict:
+        current_branch = self._run_git(["rev-parse", "--abbrev-ref", "HEAD"], path)
+        self._run_git(["fetch", "origin", "--prune"], path)
+        remote_output = self._run_git(["ls-remote", "--heads", "origin"], path)
+        branches = []
+        if remote_output:
+            for line in remote_output.splitlines():
+                parts = line.strip().split() 
+                if len(parts) < 2:
+                    continue
+                ref = parts[1]
+                if not ref.startswith("refs/heads/"):
+                    continue
+                branches.append(ref.replace("refs/heads/", "", 1))
+
+        branches = sorted(set(branches))
+        if current_branch and current_branch not in branches:
+            branches.insert(0, current_branch)
 
         return {
-            "currentBranch": branch,
+            "currentBranch": current_branch,
             "branches": branches,
         }
 
@@ -216,6 +238,54 @@ class GitMetadataService:
             "currentBranch": current_branch,
             "commit": commit,
             "output": pull_result.stdout.strip(),
+        }
+
+    def compose_action(self, path: Path, action: str) -> dict:
+        if action not in {"start", "stop"}:
+            return {"ok": False, "error": "Invalid compose action"}
+
+        commands = [["docker", "compose"]]
+        if action == "start":
+            command_set = [
+                [*commands[0], "down"],
+                [*commands[0], "up", "--build", "-d"],
+            ]
+        else:
+            command_set = [[*commands[0], "down"]]
+
+        output_lines = []
+        for command in command_set:
+            try:
+                result = self._run_command(command, path, timeout=240)
+            except (subprocess.SubprocessError, FileNotFoundError):
+                if command[:2] == ["docker", "compose"]:
+                    fallback = ["docker-compose", *command[2:]]
+                    try:
+                        result = self._run_command(fallback, path, timeout=240)
+                        command = fallback
+                    except (subprocess.SubprocessError, FileNotFoundError) as exc:
+                        return {"ok": False, "error": str(exc)}
+                else:
+                    return {"ok": False, "error": "Failed to run compose command"}
+
+            command_output = (result.stdout or "").strip()
+            command_error = (result.stderr or "").strip()
+            if command_output:
+                output_lines.append(command_output)
+            if command_error:
+                output_lines.append(command_error)
+            if result.returncode != 0:
+                message = command_error or command_output or f"Command failed: {' '.join(command)}"
+                return {"ok": False, "error": message}
+
+        branch = self._run_git(["rev-parse", "--abbrev-ref", "HEAD"], path)
+        commit = self._run_git(["rev-parse", "HEAD"], path)
+        return {
+            "ok": True,
+            "action": action,
+            "branch": branch,
+            "commit": commit,
+            "output": "\n".join(output_lines).strip(),
         }
 
 

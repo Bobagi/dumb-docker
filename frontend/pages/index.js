@@ -123,6 +123,24 @@ function ApplicationNode({ data }) {
               >
                 {data.pullLoading ? 'Pulling...' : 'Pull'}
               </button>
+              <button
+                type="button"
+                onMouseDown={handleCollapseMouseDown}
+                onClick={data.onComposeStart}
+                disabled={data.composeLoading === 'start'}
+                className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+              >
+                {data.composeLoading === 'start' ? 'Starting...' : 'Start'}
+              </button>
+              <button
+                type="button"
+                onMouseDown={handleCollapseMouseDown}
+                onClick={data.onComposeStop}
+                disabled={data.composeLoading === 'stop'}
+                className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+              >
+                {data.composeLoading === 'stop' ? 'Stopping...' : 'Stop'}
+              </button>
             </div>
             {data.gitError && <div className="text-[11px] text-red-400 mt-1 break-all">{data.gitError}</div>}
           </div>
@@ -225,6 +243,8 @@ const NODE_WIDTH = 192;
 const HORIZONTAL_GAP = 28;
 const GROUP_PADDING = 20;
 const APP_MIN_WIDTH = 620;
+const APP_MAX_WIDTH = 1380;
+const MAX_CONTAINERS_PER_ROW = 6;
 
 function estimateNodeHeight(container) {
   const portCount = container?.ports?.length || 0;
@@ -315,19 +335,21 @@ export default function Home() {
         const appContainers = app.containers || [];
         const collapsed = !!collapsedApps[app.id];
         const containerCount = appContainers.length;
+        const rowSize = Math.min(MAX_CONTAINERS_PER_ROW, Math.max(containerCount, 1));
+        const rowCount = Math.max(1, Math.ceil(containerCount / MAX_CONTAINERS_PER_ROW));
 
-        const calculatedWidth = Math.max(
-          APP_MIN_WIDTH,
-          GROUP_PADDING * 2 + Math.max(1, containerCount) * NODE_WIDTH + Math.max(0, containerCount - 1) * HORIZONTAL_GAP
-        );
+        const idealWidth = GROUP_PADDING * 2 + rowSize * NODE_WIDTH + Math.max(0, rowSize - 1) * HORIZONTAL_GAP;
+        const calculatedWidth = Math.max(APP_MIN_WIDTH, Math.min(APP_MAX_WIDTH, idealWidth));
 
         let appHeight = APP_HEADER_HEIGHT + 12;
         if (!collapsed && containerCount > 0) {
-          let tallestContainer = BASE_NODE_HEIGHT;
-          appContainers.forEach((container) => {
-            tallestContainer = Math.max(tallestContainer, estimateNodeHeight(container));
+          const rowHeights = Array.from({ length: rowCount }, () => BASE_NODE_HEIGHT);
+          appContainers.forEach((container, index) => {
+            const rowIndex = Math.floor(index / MAX_CONTAINERS_PER_ROW);
+            rowHeights[rowIndex] = Math.max(rowHeights[rowIndex], estimateNodeHeight(container));
           });
-          appHeight = APP_HEADER_HEIGHT + GROUP_PADDING + tallestContainer + GROUP_PADDING;
+          const containersHeight = rowHeights.reduce((acc, value) => acc + value, 0) + Math.max(0, rowCount - 1) * GROUP_PADDING;
+          appHeight = APP_HEADER_HEIGHT + GROUP_PADDING + containersHeight + GROUP_PADDING;
         }
 
         mapped.push({
@@ -344,6 +366,7 @@ export default function Home() {
             selectedBranch: gitUiState[app.id]?.selectedBranch || app.gitBranch || '',
             branchLoading: gitUiState[app.id]?.branchLoading || false,
             pullLoading: gitUiState[app.id]?.pullLoading || false,
+            composeLoading: gitUiState[app.id]?.composeLoading || null,
             gitError: gitUiState[app.id]?.gitError || null,
             onSelectBranch: (branch) => setGitUiState((prev) => ({
               ...prev,
@@ -355,6 +378,8 @@ export default function Home() {
             })),
             onRefreshBranches: () => refreshBranches(app.id, app.gitBranch),
             onPullBranch: () => pullBranch(app.id),
+            onComposeStart: () => runComposeAction(app.id, 'start'),
+            onComposeStop: () => runComposeAction(app.id, 'stop'),
             onToggleCollapse: () => toggleCollapse(app.id),
           },
           draggable: false,
@@ -362,13 +387,24 @@ export default function Home() {
         });
 
         if (!collapsed) {
+          const rowHeights = [];
+          appContainers.forEach((container, index) => {
+            const rowIndex = Math.floor(index / MAX_CONTAINERS_PER_ROW);
+            rowHeights[rowIndex] = Math.max(rowHeights[rowIndex] || BASE_NODE_HEIGHT, estimateNodeHeight(container));
+          });
+
           appContainers.forEach((c, i) => {
+            const rowIndex = Math.floor(i / MAX_CONTAINERS_PER_ROW);
+            const colIndex = i % MAX_CONTAINERS_PER_ROW;
+            const yOffset = rowHeights
+              .slice(0, rowIndex)
+              .reduce((acc, value) => acc + value + GROUP_PADDING, 0);
             mapped.push({
               id: c.id,
               type: 'container',
               position: {
-                x: 40 + GROUP_PADDING + i * (NODE_WIDTH + HORIZONTAL_GAP),
-                y: currentY + APP_HEADER_HEIGHT + GROUP_PADDING,
+                x: 40 + GROUP_PADDING + colIndex * (NODE_WIDTH + HORIZONTAL_GAP),
+                y: currentY + APP_HEADER_HEIGHT + GROUP_PADDING + yOffset,
               },
               data: {
                 ...c,
@@ -444,6 +480,51 @@ export default function Home() {
         [appId]: {
           ...(prev[appId] || {}),
           pullLoading: false,
+          gitError: err.message,
+        },
+      }));
+    }
+  };
+
+
+  const runComposeAction = async (appId, action) => {
+    if (!appId || appId === 'unassigned') return;
+    setGitUiState((prev) => ({
+      ...prev,
+      [appId]: {
+        ...(prev[appId] || {}),
+        composeLoading: action,
+        gitError: null,
+      },
+    }));
+
+    try {
+      const response = await fetch(`/api/applications/${appId}/compose`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.detail || data?.error || response.statusText);
+      }
+
+      setGitUiState((prev) => ({
+        ...prev,
+        [appId]: {
+          ...(prev[appId] || {}),
+          composeLoading: null,
+          gitError: null,
+        },
+      }));
+      await fetchApplications();
+      await refreshBranches(appId, data?.branch || gitUiState[appId]?.selectedBranch);
+    } catch (err) {
+      setGitUiState((prev) => ({
+        ...prev,
+        [appId]: {
+          ...(prev[appId] || {}),
+          composeLoading: null,
           gitError: err.message,
         },
       }));
