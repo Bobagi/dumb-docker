@@ -93,7 +93,7 @@ function ApplicationNode({ data }) {
               <select
                 value={data.selectedBranch || ''}
                 onChange={(event) => data.onSelectBranch?.(event.target.value)}
-                disabled={data.branchLoading || branchOptions.length === 0}
+                disabled={data.operationInProgress || branchOptions.length === 0}
                 className="nodrag nopan flex-1 text-[11px] bg-black border border-yellow-400 text-yellow-100 rounded px-2 py-1"
               >
                 {branchOptions.length === 0 ? (
@@ -108,7 +108,7 @@ function ApplicationNode({ data }) {
                 type="button"
                 onMouseDown={handleCollapseMouseDown}
                 onClick={data.onRefreshBranches}
-                disabled={data.branchLoading}
+                disabled={data.operationInProgress}
                 className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
                 title="Refresh branches"
               >
@@ -118,7 +118,7 @@ function ApplicationNode({ data }) {
                 type="button"
                 onMouseDown={handleCollapseMouseDown}
                 onClick={data.onPullBranch}
-                disabled={data.pullLoading || !data.selectedBranch}
+                disabled={data.operationInProgress || !data.selectedBranch}
                 className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
               >
                 {data.pullLoading ? 'Pulling...' : 'Pull'}
@@ -127,7 +127,7 @@ function ApplicationNode({ data }) {
                 type="button"
                 onMouseDown={handleCollapseMouseDown}
                 onClick={data.onComposeStart}
-                disabled={data.composeLoading === 'start'}
+                disabled={data.operationInProgress}
                 className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
               >
                 {data.composeLoading === 'start' ? 'Starting...' : 'Start'}
@@ -136,7 +136,7 @@ function ApplicationNode({ data }) {
                 type="button"
                 onMouseDown={handleCollapseMouseDown}
                 onClick={data.onComposeStop}
-                disabled={data.composeLoading === 'stop'}
+                disabled={data.operationInProgress}
                 className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
               >
                 {data.composeLoading === 'stop' ? 'Stopping...' : 'Stop'}
@@ -265,6 +265,15 @@ function normalizeApplicationsPayload(payload) {
   return null;
 }
 
+async function readJsonSafe(response) {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: text };
+  }
+}
+
 export default function Home() {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
@@ -300,7 +309,7 @@ export default function Home() {
 
     try {
       const response = await fetch(`/api/applications/${appId}/branches`);
-      const data = await response.json();
+      const data = await readJsonSafe(response);
       if (!response.ok) {
         throw new Error(data?.detail || data?.error || response.statusText);
       }
@@ -371,7 +380,7 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ branch: selectedBranch }),
       });
-      const data = await response.json();
+      const data = await readJsonSafe(response);
       if (!response.ok) {
         throw new Error(data?.detail || data?.error || response.statusText);
       }
@@ -416,7 +425,7 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action }),
       });
-      const data = await response.json();
+      const data = await readJsonSafe(response);
       if (!response.ok) {
         throw new Error(data?.detail || data?.error || response.statusText);
       }
@@ -595,6 +604,7 @@ export default function Home() {
           pullLoading: gitUiState[app.id]?.pullLoading || false,
           composeLoading: gitUiState[app.id]?.composeLoading || null,
           gitError: gitUiState[app.id]?.gitError || null,
+          operationInProgress: !!(gitUiState[app.id]?.branchLoading || gitUiState[app.id]?.pullLoading || gitUiState[app.id]?.composeLoading),
           onSelectBranch: (branch) => setGitUiState((prev) => ({
             ...prev,
             [app.id]: {

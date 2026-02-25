@@ -246,12 +246,9 @@ class GitMetadataService:
 
         commands = [["docker", "compose"]]
         if action == "start":
-            command_set = [
-                [*commands[0], "down"],
-                [*commands[0], "up", "--build", "-d"],
-            ]
+            command_set = [[*commands[0], "up", "--build", "-d"]]
         else:
-            command_set = [[*commands[0], "down"]]
+            command_set = [[*commands[0], "stop"]]
 
         output_lines = []
         for command in command_set:
