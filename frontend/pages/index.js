@@ -448,6 +448,8 @@ export default function Home() {
 
   const allContainers = useMemo(() => safeApplications.flatMap((app) => app.containers || []), [safeApplications]);
 
+  const nodeTypes = useMemo(() => ({ container: ContainerNode, application: ApplicationNode }), []);
+
   const externalPorts = useMemo(() => {
     const items = [];
     allContainers.forEach((container) => {
@@ -665,6 +667,14 @@ export default function Home() {
   useEffect(() => { fetchApplications(); }, [fetchApplications]);
 
   useEffect(() => {
+    if (!applicationsError) return undefined;
+    const timer = setTimeout(() => {
+      fetchApplications();
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [applicationsError, fetchApplications]);
+
+  useEffect(() => {
     safeApplications.forEach((app) => {
       if (app.id === 'unassigned' || !app.path) return;
       if (gitUiState[app.id]?.loadedOnce || gitUiState[app.id]?.branchLoading) return;
@@ -702,7 +712,7 @@ export default function Home() {
           <ReactFlow
             nodes={nodes}
             edges={edges}
-            nodeTypes={{ container: ContainerNode, application: ApplicationNode }}
+            nodeTypes={nodeTypes}
             proOptions={{}}
             nodesDraggable={false}
             onInit={setReactFlowInstance}
