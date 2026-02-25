@@ -14,9 +14,9 @@ services:
     volumes:
       - ./backend:/app
       - /var/run/docker.sock:/var/run/docker.sock
-      - /opt:/opt:ro
-      - /srv:/srv:ro
-      - /var/www:/var/www:ro
+      - /opt:/opt
+      - /srv:/srv
+      - /var/www:/var/www
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "${BACKEND_PORT:-8000}:8000"
