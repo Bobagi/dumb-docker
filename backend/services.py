@@ -423,14 +423,25 @@ class DomainDiscoveryService:
 
     def _extract_domains_from_server_name(self, value: str) -> List[str]:
         domains = []
+        seen = set()
         for candidate in value.split():
-            host = candidate.strip()
+            host = candidate.strip().lower()
             if not host or host in {"_", "default_server"}:
                 continue
             if host.startswith("$") or host.startswith("~") or "*" in host:
                 continue
+            if host in seen:
+                continue
+            seen.add(host)
             domains.append(host)
-        return domains
+
+        filtered = []
+        domain_set = set(domains)
+        for host in domains:
+            if host.startswith("www.") and host[4:] in domain_set:
+                continue
+            filtered.append(host)
+        return filtered
 
     def _extract_proxy_port(self, proxy_url: str) -> Optional[str]:
         match = re.search(r":(\d+)(?:/|$)", proxy_url)
