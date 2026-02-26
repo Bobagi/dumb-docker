@@ -85,42 +85,63 @@ function ApplicationNode({ data }) {
               <div className="text-[11px] text-yellow-200/70 mt-1">Repository remote unavailable</div>
             )}
 
-            {Array.isArray(data.domains) && data.domains.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1">
-                {data.domains.map((entry) => {
-                  const href = entry?.url || (entry?.domain ? `https://${entry.domain}` : null);
-                  const label = entry?.domain || entry?.url;
-                  if (!href || !label) return null;
-                  const sourcePath = entry?.source || 'origem não identificada';
-                  const reasons = Array.isArray(entry?.matchReasons) && entry.matchReasons.length > 0
-                    ? `Match: ${entry.matchReasons.join(', ')}`
-                    : null;
-                  const source = entry?.source ? `Source: ${entry.source}` : null;
-                  const details = [
-                    `Open ${label}`,
-                    reasons,
-                    source,
-                  ].filter(Boolean).join('\n');
-                  return (
-                    <span key={`${data.id}-${label}`} className="relative inline-flex group">
-                      <a
-                        href={href}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center rounded border border-yellow-300/70 px-2 py-0.5 text-[10px] text-yellow-100 hover:bg-yellow-400/20"
-                        title={details}
-                      >
-                        🌐 {label}
-                      </a>
-                      <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden min-w-[260px] max-w-[420px] rounded border border-yellow-500/70 bg-black px-2 py-1 text-[10px] leading-snug text-yellow-100 shadow-lg group-hover:block">
-                        <span className="block text-yellow-300">Arquivo de origem</span>
-                        <span className="block break-all">{sourcePath}</span>
+            {Array.isArray(data.domains) && data.domains.length > 0 && (() => {
+              const dockerDomains = data.domains.filter((entry) => entry?.domainType === 'docker');
+              const staticDomains = data.domains.filter((entry) => entry?.domainType !== 'docker');
+              const renderDomainButtons = (entries) => (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {entries.map((entry) => {
+                    const href = entry?.url || (entry?.domain ? `https://${entry.domain}` : null);
+                    const label = entry?.domain || entry?.url;
+                    if (!href || !label) return null;
+                    const sourcePath = entry?.source || 'origem não identificada';
+                    const reasons = Array.isArray(entry?.matchReasons) && entry.matchReasons.length > 0
+                      ? `Match: ${entry.matchReasons.join(', ')}`
+                      : null;
+                    const source = entry?.source ? `Source: ${entry.source}` : null;
+                    const details = [
+                      `Open ${label}`,
+                      reasons,
+                      source,
+                    ].filter(Boolean).join('\n');
+                    return (
+                      <span key={`${data.id}-${label}`} className="relative inline-flex group">
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center rounded border border-yellow-300/70 px-2 py-0.5 text-[10px] text-yellow-100 hover:bg-yellow-400/20"
+                          title={details}
+                        >
+                          🌐 {label}
+                        </a>
+                        <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden min-w-[260px] max-w-[420px] rounded border border-yellow-500/70 bg-black px-2 py-1 text-[10px] leading-snug text-yellow-100 shadow-lg group-hover:block">
+                          <span className="block text-yellow-300">Arquivo de origem</span>
+                          <span className="block break-all">{sourcePath}</span>
+                        </span>
                       </span>
-                    </span>
-                  );
-                })}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              );
+
+              return (
+                <div className="mt-2 space-y-2">
+                  {dockerDomains.length > 0 && (
+                    <fieldset className="rounded border border-yellow-400/40 px-2 py-1">
+                      <legend className="px-1 text-[10px] text-yellow-300 uppercase tracking-wide">Sites via Docker</legend>
+                      {renderDomainButtons(dockerDomains)}
+                    </fieldset>
+                  )}
+                  {staticDomains.length > 0 && (
+                    <fieldset className="rounded border border-yellow-400/40 px-2 py-1">
+                      <legend className="px-1 text-[10px] text-yellow-300 uppercase tracking-wide">Sites estáticos (Nginx root/alias)</legend>
+                      {renderDomainButtons(staticDomains)}
+                    </fieldset>
+                  )}
+                </div>
+              );
+            })()}
             {(data.gitBranch || data.gitCommit) && (
               <div className="text-[11px] text-yellow-100/90 mt-2">
                 {data.gitBranch || 'unknown'} {data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}

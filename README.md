@@ -114,6 +114,10 @@ Matching is done **per `server { ... }` block** (not across the whole file), to 
 
 When a match is found, the app card shows one or more 🌐 buttons that open the detected domain in a new tab. Hovering the button shows the config source file and match strategy.
 
+Domains are grouped in the UI as:
+- **Sites via Docker** (matched by `proxy_pass` host port), and
+- **Sites estáticos (Nginx root/alias)** (matched only by static `root`/`alias` path).
+
 ### Scanner config
 
 `backend/config.yml`:

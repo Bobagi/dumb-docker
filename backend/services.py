@@ -511,12 +511,15 @@ class DomainDiscoveryService:
                         if key in seen:
                             continue
                         seen.add(key)
+                        reason_list = sorted(reasons)
+                        domain_type = "docker" if "proxy_port" in reasons else "static"
                         domains_by_app[app_id].append(
                             {
                                 "domain": domain,
                                 "url": f"https://{domain}",
                                 "source": str(conf_path),
-                                "matchReasons": sorted(reasons),
+                                "matchReasons": reason_list,
+                                "domainType": domain_type,
                             }
                         )
 
