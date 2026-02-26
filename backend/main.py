@@ -14,6 +14,7 @@ from services import (
     ApplicationRegistry,
     ContainerAssociationService,
     DockerService,
+    DomainDiscoveryService,
     GitMetadataService,
 )
 
@@ -28,6 +29,7 @@ git_metadata_service = GitMetadataService()
 app_discovery_service = ApplicationDiscoveryService(git_metadata_service)
 association_service = ContainerAssociationService()
 aggregation_service = ApplicationAggregationService()
+domain_discovery_service = DomainDiscoveryService()
 application_registry = ApplicationRegistry()
 app_config = load_application_config()
 
@@ -51,16 +53,19 @@ async def run_application_scan():
     applications = await asyncio.to_thread(app_discovery_service.discover, app_config.scan_paths)
     containers = await asyncio.to_thread(docker_service.list_containers_for_association)
     associations = association_service.associate(applications, containers)
-    aggregated = aggregation_service.aggregate(applications, associations)
+    domains_by_app = await asyncio.to_thread(domain_discovery_service.discover, applications, associations)
+    aggregated = aggregation_service.aggregate(applications, associations, domains_by_app)
     await application_registry.set_applications(aggregated)
 
     assigned_count = sum(len(associations.get(app.id, [])) for app in applications)
     unassigned_count = len(associations.get("unassigned", []))
+    matched_domains = sum(len(domains_by_app.get(app.id, [])) for app in applications)
     logger.info(
-        "scan_complete applications=%s assigned_containers=%s unassigned_containers=%s",
+        "scan_complete applications=%s assigned_containers=%s unassigned_containers=%s domains=%s",
         len(applications),
         assigned_count,
         unassigned_count,
+        matched_domains,
     )
 
 
