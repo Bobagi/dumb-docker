@@ -84,6 +84,28 @@ function ApplicationNode({ data }) {
             ) : (
               <div className="text-[11px] text-yellow-200/70 mt-1">Repository remote unavailable</div>
             )}
+
+            {Array.isArray(data.domains) && data.domains.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {data.domains.map((entry) => {
+                  const href = entry?.url || (entry?.domain ? `https://${entry.domain}` : null);
+                  const label = entry?.domain || entry?.url;
+                  if (!href || !label) return null;
+                  return (
+                    <a
+                      key={`${data.id}-${label}`}
+                      href={href}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center rounded border border-yellow-300/70 px-2 py-0.5 text-[10px] text-yellow-100 hover:bg-yellow-400/20"
+                      title={`Open ${label}`}
+                    >
+                      🌐 {label}
+                    </a>
+                  );
+                })}
+              </div>
+            )}
             {(data.gitBranch || data.gitCommit) && (
               <div className="text-[11px] text-yellow-100/90 mt-2">
                 {data.gitBranch || 'unknown'} {data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}

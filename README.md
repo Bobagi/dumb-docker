@@ -103,6 +103,15 @@ An app is detected when a folder has at least one of:
 
 `docker-compose.yml` already mounts these host paths read-only into the backend container so discovery works on VPS.
 
+### Domain/subdomain detection (Nginx)
+
+The backend also scans `/etc/nginx` (mounted read-only) and tries to map `server_name` entries to each detected application by:
+
+- matching `root`/`alias` paths that are inside the repository path;
+- matching `proxy_pass` host ports against the app's published Docker ports.
+
+When a match is found, the app card shows one or more 🌐 buttons that open the detected domain in a new tab.
+
 ### Scanner config
 
 `backend/config.yml`:

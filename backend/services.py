@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import subprocess
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -22,6 +23,7 @@ class Application:
     description: Optional[str]
     summary: Optional[str]
     containers: List[dict]
+    domains: List[dict]
     lastScanTimestamp: str
 
 
@@ -370,11 +372,120 @@ class ApplicationDiscoveryService:
                         description=description,
                         summary=summary,
                         containers=[],
+                        domains=[],
                         lastScanTimestamp=now,
                     )
                 )
                 dirs[:] = []
         return discovered
+
+
+class DomainDiscoveryService:
+    SERVER_NAME_RE = re.compile(r"\bserver_name\s+([^;]+);", re.IGNORECASE)
+    ROOT_RE = re.compile(r"\b(?:root|alias)\s+([^;]+);", re.IGNORECASE)
+    PROXY_PASS_RE = re.compile(r"\bproxy_pass\s+(https?://[^;]+);", re.IGNORECASE)
+
+    def __init__(self, nginx_root: str = "/etc/nginx"):
+        self.nginx_root = Path(nginx_root)
+
+    def _iter_nginx_configs(self):
+        if not self.nginx_root.exists() or not self.nginx_root.is_dir():
+            return []
+        files = []
+        for path in self.nginx_root.rglob("*"):
+            if not path.is_file():
+                continue
+            if path.suffix == ".conf" or path.parent.name in {"sites-enabled", "sites-available", "conf.d"}:
+                files.append(path)
+        return files
+
+    def _extract_domains_from_server_name(self, value: str) -> List[str]:
+        domains = []
+        for candidate in value.split():
+            host = candidate.strip()
+            if not host or host in {"_", "default_server"}:
+                continue
+            if host.startswith("$") or host.startswith("~") or "*" in host:
+                continue
+            domains.append(host)
+        return domains
+
+    def _extract_proxy_port(self, proxy_url: str) -> Optional[str]:
+        match = re.search(r":(\d+)(?:/|$)", proxy_url)
+        return match.group(1) if match else None
+
+    def discover(self, applications: List[Application], associations: Dict[str, List[dict]]) -> Dict[str, List[dict]]:
+        by_path = sorted(
+            ((str(Path(app.path).resolve()), app.id) for app in applications if app.path),
+            key=lambda item: len(item[0]),
+            reverse=True,
+        )
+
+        app_ports: Dict[str, set] = {}
+        for app in applications:
+            ports = set()
+            for container in associations.get(app.id, []):
+                for port in container.get("ports") or []:
+                    host_port = str(port.get("host_port") or "").strip()
+                    if host_port:
+                        ports.add(host_port)
+            app_ports[app.id] = ports
+
+        domains_by_app: Dict[str, List[dict]] = {app.id: [] for app in applications}
+        seen = set()
+
+        for conf_path in self._iter_nginx_configs():
+            try:
+                content = conf_path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+
+            server_names = []
+            for match in self.SERVER_NAME_RE.finditer(content):
+                server_names.extend(self._extract_domains_from_server_name(match.group(1)))
+            if not server_names:
+                continue
+
+            root_paths = []
+            for match in self.ROOT_RE.finditer(content):
+                raw_path = match.group(1).strip().strip('"\'')
+                if raw_path and not raw_path.startswith("$"):
+                    root_paths.append(str(Path(raw_path).resolve()))
+
+            proxy_ports = []
+            for match in self.PROXY_PASS_RE.finditer(content):
+                port = self._extract_proxy_port(match.group(1))
+                if port:
+                    proxy_ports.append(port)
+
+            matching_apps = set()
+            for root_path in root_paths:
+                for app_path, app_id in by_path:
+                    if root_path == app_path or root_path.startswith(f"{app_path}/"):
+                        matching_apps.add(app_id)
+                        break
+
+            for app in applications:
+                if not app_ports.get(app.id):
+                    continue
+                if any(port in app_ports[app.id] for port in proxy_ports):
+                    matching_apps.add(app.id)
+
+            for app_id in matching_apps:
+                for domain in server_names:
+                    key = (app_id, domain)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    domains_by_app[app_id].append(
+                        {
+                            "domain": domain,
+                            "url": f"https://{domain}",
+                            "source": str(conf_path),
+                        }
+                    )
+
+        return domains_by_app
 
 
 class ContainerAssociationService:
@@ -447,10 +558,16 @@ class ApplicationAggregationService:
         }
         return app_data
 
-    def aggregate(self, applications: List[Application], associations: Dict[str, List[dict]]) -> List[dict]:
+    def aggregate(
+        self,
+        applications: List[Application],
+        associations: Dict[str, List[dict]],
+        domains_by_app: Optional[Dict[str, List[dict]]] = None,
+    ) -> List[dict]:
         payload = []
         for app in applications:
             app.containers = associations.get(app.id, [])
+            app.domains = (domains_by_app or {}).get(app.id, [])
             payload.append(self._with_usage(asdict(app)))
 
         unassigned = self._with_usage(
@@ -464,6 +581,7 @@ class ApplicationAggregationService:
                 "description": None,
                 "summary": None,
                 "containers": associations.get("unassigned", []),
+                "domains": [],
                 "lastScanTimestamp": datetime.now(timezone.utc).isoformat(),
             }
         )
