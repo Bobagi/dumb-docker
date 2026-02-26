@@ -381,6 +381,7 @@ class ApplicationDiscoveryService:
 
 
 class DomainDiscoveryService:
+    SERVER_BLOCK_RE = re.compile(r"\bserver\s*\{", re.IGNORECASE)
     SERVER_NAME_RE = re.compile(r"\bserver_name\s+([^;]+);", re.IGNORECASE)
     ROOT_RE = re.compile(r"\b(?:root|alias)\s+([^;]+);", re.IGNORECASE)
     PROXY_PASS_RE = re.compile(r"\bproxy_pass\s+(https?://[^;]+);", re.IGNORECASE)
@@ -398,6 +399,27 @@ class DomainDiscoveryService:
             if path.suffix == ".conf" or path.parent.name in {"sites-enabled", "sites-available", "conf.d"}:
                 files.append(path)
         return files
+
+    def _extract_server_blocks(self, content: str) -> List[str]:
+        blocks = []
+        for match in self.SERVER_BLOCK_RE.finditer(content):
+            open_brace_idx = content.find("{", match.start())
+            if open_brace_idx == -1:
+                continue
+            depth = 0
+            end_idx = None
+            for idx in range(open_brace_idx, len(content)):
+                char = content[idx]
+                if char == "{":
+                    depth += 1
+                elif char == "}":
+                    depth -= 1
+                    if depth == 0:
+                        end_idx = idx
+                        break
+            if end_idx is not None:
+                blocks.append(content[open_brace_idx + 1 : end_idx])
+        return blocks
 
     def _extract_domains_from_server_name(self, value: str) -> List[str]:
         domains = []
@@ -440,50 +462,52 @@ class DomainDiscoveryService:
             except OSError:
                 continue
 
-            server_names = []
-            for match in self.SERVER_NAME_RE.finditer(content):
-                server_names.extend(self._extract_domains_from_server_name(match.group(1)))
-            if not server_names:
-                continue
-
-            root_paths = []
-            for match in self.ROOT_RE.finditer(content):
-                raw_path = match.group(1).strip().strip('"\'')
-                if raw_path and not raw_path.startswith("$"):
-                    root_paths.append(str(Path(raw_path).resolve()))
-
-            proxy_ports = []
-            for match in self.PROXY_PASS_RE.finditer(content):
-                port = self._extract_proxy_port(match.group(1))
-                if port:
-                    proxy_ports.append(port)
-
-            matching_apps = set()
-            for root_path in root_paths:
-                for app_path, app_id in by_path:
-                    if root_path == app_path or root_path.startswith(f"{app_path}/"):
-                        matching_apps.add(app_id)
-                        break
-
-            for app in applications:
-                if not app_ports.get(app.id):
+            for server_block in self._extract_server_blocks(content):
+                server_names = []
+                for match in self.SERVER_NAME_RE.finditer(server_block):
+                    server_names.extend(self._extract_domains_from_server_name(match.group(1)))
+                if not server_names:
                     continue
-                if any(port in app_ports[app.id] for port in proxy_ports):
-                    matching_apps.add(app.id)
 
-            for app_id in matching_apps:
-                for domain in server_names:
-                    key = (app_id, domain)
-                    if key in seen:
+                root_paths = []
+                for match in self.ROOT_RE.finditer(server_block):
+                    raw_path = match.group(1).strip().strip("\"'")
+                    if raw_path and not raw_path.startswith("$"):
+                        root_paths.append(str(Path(raw_path).resolve()))
+
+                proxy_ports = []
+                for match in self.PROXY_PASS_RE.finditer(server_block):
+                    port = self._extract_proxy_port(match.group(1))
+                    if port:
+                        proxy_ports.append(port)
+
+                match_reasons_by_app: Dict[str, set] = {}
+                for root_path in root_paths:
+                    for app_path, app_id in by_path:
+                        if root_path == app_path or root_path.startswith(f"{app_path}/"):
+                            match_reasons_by_app.setdefault(app_id, set()).add("path")
+                            break
+
+                for app in applications:
+                    if not app_ports.get(app.id):
                         continue
-                    seen.add(key)
-                    domains_by_app[app_id].append(
-                        {
-                            "domain": domain,
-                            "url": f"https://{domain}",
-                            "source": str(conf_path),
-                        }
-                    )
+                    if any(port in app_ports[app.id] for port in proxy_ports):
+                        match_reasons_by_app.setdefault(app.id, set()).add("proxy_port")
+
+                for app_id, reasons in match_reasons_by_app.items():
+                    for domain in server_names:
+                        key = (app_id, domain)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        domains_by_app[app_id].append(
+                            {
+                                "domain": domain,
+                                "url": f"https://{domain}",
+                                "source": str(conf_path),
+                                "matchReasons": sorted(reasons),
+                            }
+                        )
 
         return domains_by_app
 

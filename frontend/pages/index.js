@@ -91,6 +91,15 @@ function ApplicationNode({ data }) {
                   const href = entry?.url || (entry?.domain ? `https://${entry.domain}` : null);
                   const label = entry?.domain || entry?.url;
                   if (!href || !label) return null;
+                  const reasons = Array.isArray(entry?.matchReasons) && entry.matchReasons.length > 0
+                    ? `Match: ${entry.matchReasons.join(', ')}`
+                    : null;
+                  const source = entry?.source ? `Source: ${entry.source}` : null;
+                  const details = [
+                    `Open ${label}`,
+                    reasons,
+                    source,
+                  ].filter(Boolean).join('\n');
                   return (
                     <a
                       key={`${data.id}-${label}`}
@@ -98,7 +107,7 @@ function ApplicationNode({ data }) {
                       target="_blank"
                       rel="noreferrer"
                       className="inline-flex items-center rounded border border-yellow-300/70 px-2 py-0.5 text-[10px] text-yellow-100 hover:bg-yellow-400/20"
-                      title={`Open ${label}`}
+                      title={details}
                     >
                       🌐 {label}
                     </a>
