@@ -447,6 +447,25 @@ class DomainDiscoveryService:
         match = re.search(r":(\d+)(?:/|$)", proxy_url)
         return match.group(1) if match else None
 
+    def _domain_matches_app_name(self, domain: str, app: Application) -> bool:
+        app_tokens = set()
+        app_name = (app.name or '').strip().lower()
+        folder_name = Path(app.path).name.strip().lower() if app.path else ''
+        if app_name:
+            app_tokens.add(app_name)
+        if folder_name:
+            app_tokens.add(folder_name)
+
+        host = (domain or '').strip().lower()
+        if not host:
+            return False
+        host = host.removeprefix('www.')
+        first_label = host.split('.', 1)[0]
+        if not first_label:
+            return False
+
+        return any(token and (first_label == token or first_label.startswith(f"{token}-")) for token in app_tokens)
+
     def discover(self, applications: List[Application], associations: Dict[str, List[dict]]) -> Dict[str, List[dict]]:
         by_path = sorted(
             ((str(Path(app.path).resolve()), app.id) for app in applications if app.path),
@@ -504,6 +523,12 @@ class DomainDiscoveryService:
                         continue
                     if any(port in app_ports[app.id] for port in proxy_ports):
                         match_reasons_by_app.setdefault(app.id, set()).add("proxy_port")
+
+                # Static fallback: when there is no proxy_pass match, map by clear domain hint (e.g. kairos.example.com -> app kairos)
+                if not proxy_ports:
+                    for app in applications:
+                        if any(self._domain_matches_app_name(domain, app) for domain in server_names):
+                            match_reasons_by_app.setdefault(app.id, set()).add("domain_hint")
 
                 for app_id, reasons in match_reasons_by_app.items():
                     for domain in server_names:

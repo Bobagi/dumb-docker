@@ -116,7 +116,7 @@ When a match is found, the app card shows one or more 🌐 buttons that open the
 
 Domains are grouped in the UI as:
 - **Sites via Docker** (matched by `proxy_pass` host port), and
-- **Sites estáticos (Nginx root/alias)** (matched only by static `root`/`alias` path).
+- **Sites estáticos (Nginx root/alias)** (matched by static `root`/`alias` path, with fallback by domain name hint when no `proxy_pass` exists in that server block).
 
 ### Scanner config
 
