@@ -91,6 +91,7 @@ function ApplicationNode({ data }) {
                   const href = entry?.url || (entry?.domain ? `https://${entry.domain}` : null);
                   const label = entry?.domain || entry?.url;
                   if (!href || !label) return null;
+                  const sourcePath = entry?.source || 'origem não identificada';
                   const reasons = Array.isArray(entry?.matchReasons) && entry.matchReasons.length > 0
                     ? `Match: ${entry.matchReasons.join(', ')}`
                     : null;
@@ -101,16 +102,21 @@ function ApplicationNode({ data }) {
                     source,
                   ].filter(Boolean).join('\n');
                   return (
-                    <a
-                      key={`${data.id}-${label}`}
-                      href={href}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center rounded border border-yellow-300/70 px-2 py-0.5 text-[10px] text-yellow-100 hover:bg-yellow-400/20"
-                      title={details}
-                    >
-                      🌐 {label}
-                    </a>
+                    <span key={`${data.id}-${label}`} className="relative inline-flex group">
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center rounded border border-yellow-300/70 px-2 py-0.5 text-[10px] text-yellow-100 hover:bg-yellow-400/20"
+                        title={details}
+                      >
+                        🌐 {label}
+                      </a>
+                      <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden min-w-[260px] max-w-[420px] rounded border border-yellow-500/70 bg-black px-2 py-1 text-[10px] leading-snug text-yellow-100 shadow-lg group-hover:block">
+                        <span className="block text-yellow-300">Arquivo de origem</span>
+                        <span className="block break-all">{sourcePath}</span>
+                      </span>
+                    </span>
                   );
                 })}
               </div>
