@@ -383,7 +383,6 @@ class ApplicationDiscoveryService:
 class DomainDiscoveryService:
     SERVER_BLOCK_RE = re.compile(r"\bserver\s*\{", re.IGNORECASE)
     SERVER_NAME_RE = re.compile(r"\bserver_name\s+([^;]+);", re.IGNORECASE)
-    ROOT_RE = re.compile(r"\b(?:root|alias)\s+([^;]+);", re.IGNORECASE)
     PROXY_PASS_RE = re.compile(r"\bproxy_pass\s+(https?://[^;]+);", re.IGNORECASE)
 
     def __init__(self, nginx_root: str = "/etc/nginx"):
@@ -447,32 +446,7 @@ class DomainDiscoveryService:
         match = re.search(r":(\d+)(?:/|$)", proxy_url)
         return match.group(1) if match else None
 
-    def _domain_matches_app_name(self, domain: str, app: Application) -> bool:
-        app_tokens = set()
-        app_name = (app.name or '').strip().lower()
-        folder_name = Path(app.path).name.strip().lower() if app.path else ''
-        if app_name:
-            app_tokens.add(app_name)
-        if folder_name:
-            app_tokens.add(folder_name)
-
-        host = (domain or '').strip().lower()
-        if not host:
-            return False
-        host = host.removeprefix('www.')
-        first_label = host.split('.', 1)[0]
-        if not first_label:
-            return False
-
-        return any(token and (first_label == token or first_label.startswith(f"{token}-")) for token in app_tokens)
-
     def discover(self, applications: List[Application], associations: Dict[str, List[dict]]) -> Dict[str, List[dict]]:
-        by_path = sorted(
-            ((str(Path(app.path).resolve()), app.id) for app in applications if app.path),
-            key=lambda item: len(item[0]),
-            reverse=True,
-        )
-
         app_ports: Dict[str, set] = {}
         for app in applications:
             ports = set()
@@ -499,12 +473,6 @@ class DomainDiscoveryService:
                 if not server_names:
                     continue
 
-                root_paths = []
-                for match in self.ROOT_RE.finditer(server_block):
-                    raw_path = match.group(1).strip().strip("\"'")
-                    if raw_path and not raw_path.startswith("$"):
-                        root_paths.append(str(Path(raw_path).resolve()))
-
                 proxy_ports = []
                 for match in self.PROXY_PASS_RE.finditer(server_block):
                     port = self._extract_proxy_port(match.group(1))
@@ -512,23 +480,12 @@ class DomainDiscoveryService:
                         proxy_ports.append(port)
 
                 match_reasons_by_app: Dict[str, set] = {}
-                for root_path in root_paths:
-                    for app_path, app_id in by_path:
-                        if root_path == app_path or root_path.startswith(f"{app_path}/"):
-                            match_reasons_by_app.setdefault(app_id, set()).add("path")
-                            break
 
                 for app in applications:
                     if not app_ports.get(app.id):
                         continue
                     if any(port in app_ports[app.id] for port in proxy_ports):
                         match_reasons_by_app.setdefault(app.id, set()).add("proxy_port")
-
-                # Static fallback: when there is no proxy_pass match, map by clear domain hint (e.g. kairos.example.com -> app kairos)
-                if not proxy_ports:
-                    for app in applications:
-                        if any(self._domain_matches_app_name(domain, app) for domain in server_names):
-                            match_reasons_by_app.setdefault(app.id, set()).add("domain_hint")
 
                 for app_id, reasons in match_reasons_by_app.items():
                     for domain in server_names:
@@ -537,14 +494,13 @@ class DomainDiscoveryService:
                             continue
                         seen.add(key)
                         reason_list = sorted(reasons)
-                        domain_type = "docker" if "proxy_port" in reasons else "static"
                         domains_by_app[app_id].append(
                             {
                                 "domain": domain,
                                 "url": f"https://{domain}",
                                 "source": str(conf_path),
                                 "matchReasons": reason_list,
-                                "domainType": domain_type,
+                                "domainType": "docker",
                             }
                         )
 
