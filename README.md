@@ -22,7 +22,7 @@ Great for personal servers, homelabs, and small production VPS deployments.
 
 Dumb Docker was designed to be friendly and practical: open the panel, see your apps, click to manage containers, done.
 
-<img width="1916" height="991" alt="image" src="https://github.com/user-attachments/assets/c48fb67c-818a-442e-9840-af62289b92e9" />
+<img width="1918" height="991" alt="image" src="https://github.com/user-attachments/assets/e4ab72ef-48d5-465c-b437-5cda053c7c3c" />
 
 ## Quick Start (Docker Compose)
 
