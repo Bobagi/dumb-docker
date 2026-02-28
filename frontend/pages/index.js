@@ -319,7 +319,7 @@ async function readJsonSafe(response) {
   }
 }
 
-export default function Home() {
+export default function Home({ vpsDefaults = {} }) {
   const [nodes, setNodes] = useState([]);
   const [edges, setEdges] = useState([]);
   const [applications, setApplications] = useState([]);
@@ -332,17 +332,17 @@ export default function Home() {
   const [gitUiState, setGitUiState] = useState({});
   const [sidebarTab, setSidebarTab] = useState('ports');
   const [vpsConnection, setVpsConnection] = useState({
-    host: process.env.NEXT_PUBLIC_VPS_HOST || '',
-    port: process.env.NEXT_PUBLIC_VPS_PORT || 22,
-    username: process.env.NEXT_PUBLIC_VPS_USERNAME || '',
-    password: process.env.NEXT_PUBLIC_VPS_PASSWORD || '',
-    privateKey: process.env.NEXT_PUBLIC_VPS_PRIVATE_KEY || '',
+    host: vpsDefaults.host || '',
+    port: vpsDefaults.port || 22,
+    username: vpsDefaults.username || '',
+    password: vpsDefaults.password || '',
+    privateKey: vpsDefaults.privateKey || '',
   });
-  const [vpsPath, setVpsPath] = useState(process.env.NEXT_PUBLIC_VPS_PATH || '/etc/nginx/sites-available');
+  const [vpsPath, setVpsPath] = useState(vpsDefaults.path || '/etc/nginx/sites-available');
   const [vpsEntries, setVpsEntries] = useState([]);
   const [vpsSelectedFile, setVpsSelectedFile] = useState('');
   const [vpsFileContent, setVpsFileContent] = useState('');
-  const [vpsCommand, setVpsCommand] = useState(process.env.NEXT_PUBLIC_VPS_DEFAULT_COMMAND || 'nginx -t');
+  const [vpsCommand, setVpsCommand] = useState(vpsDefaults.defaultCommand || 'nginx -t');
   const [vpsTerminalOpen, setVpsTerminalOpen] = useState(false);
   const [vpsTerminalCommand, setVpsTerminalCommand] = useState('');
   const [vpsTerminalOutput, setVpsTerminalOutput] = useState('');
@@ -1041,5 +1041,16 @@ export async function getServerSideProps(context) {
   if (!session) {
     return { redirect: { destination: '/login', permanent: false } };
   }
-  return { props: {} };
+
+  const vpsDefaults = {
+    host: process.env.VPS_HOST || process.env.NEXT_PUBLIC_VPS_HOST || '',
+    port: process.env.VPS_PORT || process.env.NEXT_PUBLIC_VPS_PORT || 22,
+    username: process.env.VPS_USERNAME || process.env.NEXT_PUBLIC_VPS_USERNAME || '',
+    password: process.env.VPS_PASSWORD || process.env.NEXT_PUBLIC_VPS_PASSWORD || '',
+    privateKey: process.env.VPS_PRIVATE_KEY || process.env.NEXT_PUBLIC_VPS_PRIVATE_KEY || '',
+    path: process.env.VPS_PATH || process.env.NEXT_PUBLIC_VPS_PATH || '/etc/nginx/sites-available',
+    defaultCommand: process.env.VPS_DEFAULT_COMMAND || process.env.NEXT_PUBLIC_VPS_DEFAULT_COMMAND || 'nginx -t',
+  };
+
+  return { props: { vpsDefaults } };
 }

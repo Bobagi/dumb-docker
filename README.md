@@ -80,7 +80,19 @@ NEXT_PUBLIC_VPS_PATH=/etc/nginx/sites-available
 NEXT_PUBLIC_VPS_DEFAULT_COMMAND=nginx -t
 ```
 
-> This is optional, but if you add password/private key there, the form will be pre-filled automatically so you do not need to type them every time.
+Server-side alternative (recommended for secrets):
+
+```bash
+VPS_HOST=your.vps.host
+VPS_PORT=22
+VPS_USERNAME=root
+VPS_PASSWORD=your_password
+VPS_PRIVATE_KEY=
+VPS_PATH=/etc/nginx/sites-available
+VPS_DEFAULT_COMMAND=nginx -t
+```
+
+> This is optional, but if you add password/private key there, the form will be pre-filled automatically so you do not need to type them every time. If password does not auto-fill with `NEXT_PUBLIC_VPS_PASSWORD`, use `VPS_PASSWORD`.
 
 > If your password contains `#`, wrap it in quotes, e.g. `NEXT_PUBLIC_VPS_PASSWORD="fu5#0Fjx6jwFzC"`.
 
