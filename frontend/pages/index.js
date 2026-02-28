@@ -332,17 +332,17 @@ export default function Home({ vpsDefaults = {} }) {
   const [gitUiState, setGitUiState] = useState({});
   const [sidebarTab, setSidebarTab] = useState('ports');
   const [vpsConnection, setVpsConnection] = useState({
-    host: vpsDefaults.host || '',
-    port: vpsDefaults.port || 22,
-    username: vpsDefaults.username || '',
-    password: vpsDefaults.password || '',
-    privateKey: vpsDefaults.privateKey || '',
+    host: vpsDefaults.host || process.env.NEXT_PUBLIC_VPS_HOST || '',
+    port: vpsDefaults.port || process.env.NEXT_PUBLIC_VPS_PORT || 22,
+    username: vpsDefaults.username || process.env.NEXT_PUBLIC_VPS_USERNAME || '',
+    password: vpsDefaults.password || process.env.NEXT_PUBLIC_VPS_PASSWORD || '',
+    privateKey: vpsDefaults.privateKey || process.env.NEXT_PUBLIC_VPS_PRIVATE_KEY || '',
   });
-  const [vpsPath, setVpsPath] = useState(vpsDefaults.path || '/etc/nginx/sites-available');
+  const [vpsPath, setVpsPath] = useState(vpsDefaults.path || process.env.NEXT_PUBLIC_VPS_PATH || '/etc/nginx/sites-available');
   const [vpsEntries, setVpsEntries] = useState([]);
   const [vpsSelectedFile, setVpsSelectedFile] = useState('');
   const [vpsFileContent, setVpsFileContent] = useState('');
-  const [vpsCommand, setVpsCommand] = useState(vpsDefaults.defaultCommand || 'nginx -t');
+  const [vpsCommand, setVpsCommand] = useState(vpsDefaults.defaultCommand || process.env.NEXT_PUBLIC_VPS_DEFAULT_COMMAND || 'nginx -t');
   const [vpsTerminalOpen, setVpsTerminalOpen] = useState(false);
   const [vpsTerminalCommand, setVpsTerminalCommand] = useState('');
   const [vpsTerminalOutput, setVpsTerminalOutput] = useState('');
@@ -869,6 +869,31 @@ export default function Home({ vpsDefaults = {} }) {
   useEffect(() => () => {
     if (highlightTimeoutRef.current) clearTimeout(highlightTimeoutRef.current);
     if (logsIntervalRef.current) clearInterval(logsIntervalRef.current);
+  }, []);
+
+  useEffect(() => {
+    const loadVpsDefaults = async () => {
+      try {
+        const response = await fetch('/api/vps/defaults');
+        const data = await readJsonSafe(response);
+        if (!response.ok) return;
+
+        setVpsConnection((prev) => ({
+          host: prev.host || data.host || '',
+          port: prev.port || data.port || 22,
+          username: prev.username || data.username || '',
+          password: prev.password || data.password || '',
+          privateKey: prev.privateKey || data.privateKey || '',
+        }));
+
+        setVpsPath((prev) => prev || data.path || '/etc/nginx/sites-available');
+        setVpsCommand((prev) => prev || data.defaultCommand || 'nginx -t');
+      } catch {
+        // Silent fallback: manual input remains available.
+      }
+    };
+
+    loadVpsDefaults();
   }, []);
 
   return (
