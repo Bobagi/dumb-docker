@@ -1,11 +1,16 @@
 import asyncio
 import logging
+import stat
+from io import StringIO
 from pathlib import Path
+from typing import Optional
 
 import docker
+import paramiko
 from docker.errors import APIError, ImageNotFound, NotFound
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from config import load_application_config
 from services import (
@@ -41,6 +46,64 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class VpsConnectionPayload(BaseModel):
+    host: str
+    username: str
+    port: int = 22
+    password: Optional[str] = None
+    private_key: Optional[str] = None
+
+
+class VpsListFilesPayload(VpsConnectionPayload):
+    path: str
+
+
+class VpsReadFilePayload(VpsConnectionPayload):
+    path: str
+
+
+class VpsWriteFilePayload(VpsConnectionPayload):
+    path: str
+    content: str
+
+
+class VpsDeletePathPayload(VpsConnectionPayload):
+    path: str
+
+
+class VpsCreateDirectoryPayload(VpsConnectionPayload):
+    path: str
+
+
+class VpsRunCommandPayload(VpsConnectionPayload):
+    command: str
+
+
+def _open_vps_ssh_client(payload: VpsConnectionPayload) -> paramiko.SSHClient:
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    connect_kwargs = {
+        "hostname": payload.host,
+        "port": payload.port,
+        "username": payload.username,
+        "timeout": 15,
+    }
+
+    if payload.private_key:
+        private_key = paramiko.RSAKey.from_private_key(StringIO(payload.private_key))
+        connect_kwargs["pkey"] = private_key
+    else:
+        connect_kwargs["password"] = payload.password
+
+    ssh.connect(**connect_kwargs)
+    return ssh
+
+
+def _sftp_error(exc: Exception) -> HTTPException:
+    return HTTPException(status_code=400, detail=str(exc))
 
 
 def _log_scan_paths():
@@ -238,3 +301,111 @@ async def run_application_compose(application_id: str, payload: dict):
         raise HTTPException(status_code=400, detail=result.get("error") or "Compose action failed")
     await run_application_scan()
     return result
+
+
+@app.post("/api/vps/list-files")
+async def vps_list_files(payload: VpsListFilesPayload):
+    try:
+        ssh = await asyncio.to_thread(_open_vps_ssh_client, payload)
+        sftp = ssh.open_sftp()
+        entries = []
+        normalized_path = payload.path or "."
+        for item in sftp.listdir_attr(normalized_path):
+            is_dir = stat.S_ISDIR(item.st_mode)
+            entries.append(
+                {
+                    "name": item.filename,
+                    "path": f"{normalized_path.rstrip('/')}/{item.filename}" if normalized_path != "/" else f"/{item.filename}",
+                    "isDirectory": is_dir,
+                    "size": item.st_size,
+                    "modified": item.st_mtime,
+                }
+            )
+
+        entries.sort(key=lambda entry: (not entry["isDirectory"], entry["name"].lower()))
+        sftp.close()
+        ssh.close()
+        return {"path": normalized_path, "entries": entries}
+    except Exception as exc:
+        raise _sftp_error(exc) from exc
+
+
+@app.post("/api/vps/read-file")
+async def vps_read_file(payload: VpsReadFilePayload):
+    try:
+        ssh = await asyncio.to_thread(_open_vps_ssh_client, payload)
+        sftp = ssh.open_sftp()
+        with sftp.open(payload.path, "r") as remote_file:
+            content = remote_file.read().decode("utf-8", errors="ignore")
+        sftp.close()
+        ssh.close()
+        return {"path": payload.path, "content": content}
+    except Exception as exc:
+        raise _sftp_error(exc) from exc
+
+
+@app.post("/api/vps/write-file")
+async def vps_write_file(payload: VpsWriteFilePayload):
+    try:
+        ssh = await asyncio.to_thread(_open_vps_ssh_client, payload)
+        sftp = ssh.open_sftp()
+        with sftp.open(payload.path, "w") as remote_file:
+            remote_file.write(payload.content)
+        sftp.close()
+        ssh.close()
+        return {"ok": True, "path": payload.path}
+    except Exception as exc:
+        raise _sftp_error(exc) from exc
+
+
+@app.post("/api/vps/delete-path")
+async def vps_delete_path(payload: VpsDeletePathPayload):
+    try:
+        ssh = await asyncio.to_thread(_open_vps_ssh_client, payload)
+        sftp = ssh.open_sftp()
+        mode = sftp.stat(payload.path).st_mode
+        if stat.S_ISDIR(mode):
+            sftp.rmdir(payload.path)
+        else:
+            sftp.remove(payload.path)
+        sftp.close()
+        ssh.close()
+        return {"ok": True}
+    except Exception as exc:
+        raise _sftp_error(exc) from exc
+
+
+@app.post("/api/vps/create-directory")
+async def vps_create_directory(payload: VpsCreateDirectoryPayload):
+    try:
+        ssh = await asyncio.to_thread(_open_vps_ssh_client, payload)
+        sftp = ssh.open_sftp()
+        sftp.mkdir(payload.path)
+        sftp.close()
+        ssh.close()
+        return {"ok": True, "path": payload.path}
+    except Exception as exc:
+        raise _sftp_error(exc) from exc
+
+
+@app.post("/api/vps/run-command")
+async def vps_run_command(payload: VpsRunCommandPayload):
+    command = (payload.command or "").strip()
+    if not command:
+        raise HTTPException(status_code=400, detail="Command is required")
+
+    try:
+        ssh = await asyncio.to_thread(_open_vps_ssh_client, payload)
+        stdin, stdout, stderr = ssh.exec_command(command, timeout=60)
+        exit_status = stdout.channel.recv_exit_status()
+        output = stdout.read().decode("utf-8", errors="ignore")
+        errors = stderr.read().decode("utf-8", errors="ignore")
+        ssh.close()
+        return {
+            "ok": exit_status == 0,
+            "exitStatus": exit_status,
+            "stdout": output,
+            "stderr": errors,
+        }
+    except Exception as exc:
+        raise _sftp_error(exc) from exc

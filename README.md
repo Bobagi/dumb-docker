@@ -64,13 +64,34 @@ docker compose up --build
 
 Open: `http://YOUR_SERVER_IP:3000`
 
+### 5) (Optional) Pre-fill VPS tab connection fields
+
+If you want host/user/port to appear automatically in the **VPS SFTP** tab, add these keys to `frontend/.env`:
+
+```bash
+NEXT_PUBLIC_VPS_HOST=your.vps.host
+NEXT_PUBLIC_VPS_PORT=22
+NEXT_PUBLIC_VPS_USERNAME=root
+```
+
+> Password/private key are **not required** in `.env`; you can type them directly in the UI when needed.
+
 ## Daily commands
 
 ### Restart stack
 
+If you changed code/dependencies, use rebuild:
+
 ```bash
 docker compose down
 docker compose up --build -d
+```
+
+If you changed only runtime env values and images are already built, this is usually enough:
+
+```bash
+docker compose down
+docker compose up -d
 ```
 
 ### See logs
