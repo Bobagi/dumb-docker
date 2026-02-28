@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import shlex
 import stat
 from io import StringIO
 from pathlib import Path
@@ -79,6 +80,7 @@ class VpsCreateDirectoryPayload(VpsConnectionPayload):
 
 class VpsRunCommandPayload(VpsConnectionPayload):
     command: str
+    cwd: Optional[str] = None
 
 
 def _open_vps_ssh_client(payload: VpsConnectionPayload) -> paramiko.SSHClient:
@@ -394,18 +396,36 @@ async def vps_run_command(payload: VpsRunCommandPayload):
     if not command:
         raise HTTPException(status_code=400, detail="Command is required")
 
+    cwd = (payload.cwd or "~").strip() or "~"
+    marker = "__DUMBDOCKER_PWD__"
+    wrapped_command = (
+        f"cd {shlex.quote(cwd)} >/dev/null 2>&1; "
+        f"{command}; "
+        "status=$?; "
+        f"printf '\\n{marker}%s\\n' \"$PWD\"; "
+        "exit $status"
+    )
+
     try:
         ssh = await asyncio.to_thread(_open_vps_ssh_client, payload)
-        stdin, stdout, stderr = ssh.exec_command(command, timeout=60)
+        stdin, stdout, stderr = ssh.exec_command(wrapped_command, timeout=60)
         exit_status = stdout.channel.recv_exit_status()
         output = stdout.read().decode("utf-8", errors="ignore")
         errors = stderr.read().decode("utf-8", errors="ignore")
+
+        current_path = cwd
+        marker_index = output.rfind(marker)
+        if marker_index != -1:
+            current_path = output[marker_index + len(marker):].strip().splitlines()[0]
+            output = output[:marker_index].rstrip()
+
         ssh.close()
         return {
             "ok": exit_status == 0,
             "exitStatus": exit_status,
             "stdout": output,
             "stderr": errors,
+            "cwd": current_path,
         }
     except Exception as exc:
         raise _sftp_error(exc) from exc
