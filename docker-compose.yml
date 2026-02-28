@@ -4,6 +4,18 @@ services:
     working_dir: /app
     volumes:
       - ./frontend:/app
+    environment:
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-changeme}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_PASSWORD_SHA256: ${ADMIN_PASSWORD_SHA256:-}
+      NEXT_PUBLIC_VPS_HOST: ${NEXT_PUBLIC_VPS_HOST:-}
+      NEXT_PUBLIC_VPS_PORT: ${NEXT_PUBLIC_VPS_PORT:-22}
+      NEXT_PUBLIC_VPS_USERNAME: ${NEXT_PUBLIC_VPS_USERNAME:-}
+      NEXT_PUBLIC_VPS_PASSWORD: ${NEXT_PUBLIC_VPS_PASSWORD:-}
+      NEXT_PUBLIC_VPS_PRIVATE_KEY: ${NEXT_PUBLIC_VPS_PRIVATE_KEY:-}
+      NEXT_PUBLIC_VPS_PATH: ${NEXT_PUBLIC_VPS_PATH:-/etc/nginx/sites-available}
+      NEXT_PUBLIC_VPS_DEFAULT_COMMAND: ${NEXT_PUBLIC_VPS_DEFAULT_COMMAND:-nginx -t}
     command: sh -c "npm install && npm run dev -- --port 3000 --hostname 0.0.0.0"
     ports:
       - "${FRONTEND_PORT:-3000}:3000"

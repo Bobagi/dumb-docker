@@ -42,6 +42,8 @@ BACKEND_PORT=8000
 EOF
 ```
 
+You can also keep your auth + VPS defaults in this same root `.env` (recommended when running with Docker Compose), because `docker-compose.yml` now forwards them to the frontend container.
+
 ### 3) Configure login for dashboard
 
 Create `frontend/.env` (or copy from `frontend/.env.example`):
@@ -66,7 +68,7 @@ Open: `http://YOUR_SERVER_IP:3000`
 
 ### 5) (Optional) Pre-fill VPS tab connection fields
 
-If you want the VPS connection form to be auto-filled in the **VPS SFTP** tab, add these keys to `frontend/.env`:
+If you want the VPS connection form to be auto-filled in the **VPS SFTP** tab, add these keys to your root `.env` (or to `frontend/.env`):
 
 ```bash
 NEXT_PUBLIC_VPS_HOST=your.vps.host
@@ -79,6 +81,8 @@ NEXT_PUBLIC_VPS_DEFAULT_COMMAND=nginx -t
 ```
 
 > This is optional, but if you add password/private key there, the form will be pre-filled automatically so you do not need to type them every time.
+
+> If your password contains `#`, wrap it in quotes, e.g. `NEXT_PUBLIC_VPS_PASSWORD="fu5#0Fjx6jwFzC"`.
 
 ## Daily commands
 
