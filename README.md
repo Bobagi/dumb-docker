@@ -33,7 +33,7 @@ git clone https://github.com/Bobagi/dumb-docker.git
 cd dumb-docker
 ```
 
-### 2) Create root `.env`
+### 2) Create root `.env` (same directory as `docker-compose.yml`)
 
 ```bash
 cat > .env <<EOF
@@ -41,6 +41,12 @@ FRONTEND_PORT=3000
 BACKEND_PORT=8000
 EOF
 ```
+
+You can also keep your auth + VPS defaults in this same root `.env` (recommended when running with Docker Compose).
+
+**Correct path:** `dumb-docker/.env` (project root, next to `docker-compose.yml`).
+
+The frontend service now loads root vars through `env_file: ./.env`, explicit environment mappings, and also mounts this file to `/app/.env.local` so Next.js reads it directly at startup.
 
 ### 3) Configure login for dashboard
 
@@ -62,15 +68,56 @@ Set at least:
 docker compose up --build
 ```
 
+> Important: run this command from the project root (`dumb-docker/`).
+
 Open: `http://YOUR_SERVER_IP:3000`
+
+### 5) (Optional) Pre-fill VPS tab connection fields
+
+If you want the VPS connection form to be auto-filled in the **VPS SFTP** tab, add these keys to your root `.env` (or to `frontend/.env`):
+
+```bash
+NEXT_PUBLIC_VPS_HOST=your.vps.host
+NEXT_PUBLIC_VPS_PORT=22
+NEXT_PUBLIC_VPS_USERNAME=root
+NEXT_PUBLIC_VPS_PASSWORD=your_password
+NEXT_PUBLIC_VPS_PRIVATE_KEY=
+NEXT_PUBLIC_VPS_PATH=/etc/nginx/sites-available
+NEXT_PUBLIC_VPS_DEFAULT_COMMAND=nginx -t
+```
+
+Server-side alternative (recommended for secrets):
+
+```bash
+VPS_HOST=your.vps.host
+VPS_PORT=22
+VPS_USERNAME=root
+VPS_PASSWORD=your_password
+VPS_PRIVATE_KEY=
+VPS_PATH=/etc/nginx/sites-available
+VPS_DEFAULT_COMMAND=nginx -t
+```
+
+> This is optional, but if you add password/private key there, the form will be pre-filled automatically so you do not need to type them every time. If password does not auto-fill with `NEXT_PUBLIC_VPS_PASSWORD`, use `VPS_PASSWORD`.
+
+> If your password contains `#`, wrap it in quotes, e.g. `NEXT_PUBLIC_VPS_PASSWORD="fu5#0Fjx6jwFzC"`.
 
 ## Daily commands
 
 ### Restart stack
 
+If you changed code/dependencies, use rebuild:
+
 ```bash
 docker compose down
 docker compose up --build -d
+```
+
+If you changed only runtime env values and images are already built, this is usually enough:
+
+```bash
+docker compose down
+docker compose up -d --force-recreate
 ```
 
 ### See logs
