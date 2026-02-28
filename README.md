@@ -42,7 +42,7 @@ BACKEND_PORT=8000
 EOF
 ```
 
-You can also keep your auth + VPS defaults in this same root `.env` (recommended when running with Docker Compose), because `docker-compose.yml` now forwards them to the frontend container.
+You can also keep your auth + VPS defaults in this same root `.env` (recommended when running with Docker Compose). The frontend service now loads root vars through `env_file: ./.env` and explicit environment mappings.
 
 ### 3) Configure login for dashboard
 
@@ -111,7 +111,7 @@ If you changed only runtime env values and images are already built, this is usu
 
 ```bash
 docker compose down
-docker compose up -d
+docker compose up -d --force-recreate
 ```
 
 ### See logs

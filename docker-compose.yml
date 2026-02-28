@@ -4,6 +4,8 @@ services:
     working_dir: /app
     volumes:
       - ./frontend:/app
+    env_file:
+      - ./.env
     environment:
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-changeme}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
