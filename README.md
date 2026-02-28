@@ -66,15 +66,19 @@ Open: `http://YOUR_SERVER_IP:3000`
 
 ### 5) (Optional) Pre-fill VPS tab connection fields
 
-If you want host/user/port to appear automatically in the **VPS SFTP** tab, add these keys to `frontend/.env`:
+If you want the VPS connection form to be auto-filled in the **VPS SFTP** tab, add these keys to `frontend/.env`:
 
 ```bash
 NEXT_PUBLIC_VPS_HOST=your.vps.host
 NEXT_PUBLIC_VPS_PORT=22
 NEXT_PUBLIC_VPS_USERNAME=root
+NEXT_PUBLIC_VPS_PASSWORD=your_password
+NEXT_PUBLIC_VPS_PRIVATE_KEY=
+NEXT_PUBLIC_VPS_PATH=/etc/nginx/sites-available
+NEXT_PUBLIC_VPS_DEFAULT_COMMAND=nginx -t
 ```
 
-> Password/private key are **not required** in `.env`; you can type them directly in the UI when needed.
+> This is optional, but if you add password/private key there, the form will be pre-filled automatically so you do not need to type them every time.
 
 ## Daily commands
 

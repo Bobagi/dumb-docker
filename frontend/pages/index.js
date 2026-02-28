@@ -97,7 +97,7 @@ function ApplicationNode({ data }) {
                       const href = entry?.url || (entry?.domain ? `https://${entry.domain}` : null);
                       const label = entry?.domain || entry?.url;
                       if (!href || !label) return null;
-                      const sourcePath = entry?.source || 'origem não identificada';
+                      const sourcePath = entry?.source || 'source not identified';
                       const reasons = Array.isArray(entry?.matchReasons) && entry.matchReasons.length > 0
                         ? `Match: ${entry.matchReasons.join(', ')}`
                         : null;
@@ -119,7 +119,7 @@ function ApplicationNode({ data }) {
                             🌐 {label}
                           </a>
                           <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden min-w-[260px] max-w-[420px] rounded border border-yellow-500/70 bg-black px-2 py-1 text-[10px] leading-snug text-yellow-100 shadow-lg group-hover:block">
-                            <span className="block text-yellow-300">Arquivo de origem</span>
+                            <span className="block text-yellow-300">Source file</span>
                             <span className="block break-all">{sourcePath}</span>
                           </span>
                         </span>
@@ -335,14 +335,14 @@ export default function Home() {
     host: process.env.NEXT_PUBLIC_VPS_HOST || '',
     port: process.env.NEXT_PUBLIC_VPS_PORT || 22,
     username: process.env.NEXT_PUBLIC_VPS_USERNAME || '',
-    password: '',
-    privateKey: '',
+    password: process.env.NEXT_PUBLIC_VPS_PASSWORD || '',
+    privateKey: process.env.NEXT_PUBLIC_VPS_PRIVATE_KEY || '',
   });
-  const [vpsPath, setVpsPath] = useState('/etc/nginx/sites-available');
+  const [vpsPath, setVpsPath] = useState(process.env.NEXT_PUBLIC_VPS_PATH || '/etc/nginx/sites-available');
   const [vpsEntries, setVpsEntries] = useState([]);
   const [vpsSelectedFile, setVpsSelectedFile] = useState('');
   const [vpsFileContent, setVpsFileContent] = useState('');
-  const [vpsCommand, setVpsCommand] = useState('nginx -t');
+  const [vpsCommand, setVpsCommand] = useState(process.env.NEXT_PUBLIC_VPS_DEFAULT_COMMAND || 'nginx -t');
   const [vpsTerminalOpen, setVpsTerminalOpen] = useState(false);
   const [vpsTerminalCommand, setVpsTerminalCommand] = useState('');
   const [vpsTerminalOutput, setVpsTerminalOutput] = useState('');
@@ -376,7 +376,7 @@ export default function Home() {
       const data = await sendVpsRequest('list-files', { path: nextPath });
       setVpsPath(data.path || nextPath);
       setVpsEntries(Array.isArray(data.entries) ? data.entries : []);
-      setVpsStatus({ loading: false, error: null, success: 'Diretório carregado com sucesso.' });
+      setVpsStatus({ loading: false, error: null, success: 'Directory loaded successfully.' });
     } catch (err) {
       setVpsStatus({ loading: false, error: err.message, success: null });
     }
@@ -388,7 +388,7 @@ export default function Home() {
       const data = await sendVpsRequest('read-file', { path });
       setVpsSelectedFile(path);
       setVpsFileContent(data.content || '');
-      setVpsStatus({ loading: false, error: null, success: `Arquivo ${path} carregado.` });
+      setVpsStatus({ loading: false, error: null, success: `File ${path} loaded.` });
     } catch (err) {
       setVpsStatus({ loading: false, error: err.message, success: null });
     }
@@ -396,13 +396,13 @@ export default function Home() {
 
   const saveRemoteFile = useCallback(async () => {
     if (!vpsSelectedFile) {
-      setVpsStatus({ loading: false, error: 'Selecione ou informe um arquivo para salvar.', success: null });
+      setVpsStatus({ loading: false, error: 'Select or enter a file path to save.', success: null });
       return;
     }
     setVpsStatus({ loading: true, error: null, success: null });
     try {
       await sendVpsRequest('write-file', { path: vpsSelectedFile, content: vpsFileContent });
-      setVpsStatus({ loading: false, error: null, success: `Arquivo ${vpsSelectedFile} salvo.` });
+      setVpsStatus({ loading: false, error: null, success: `File ${vpsSelectedFile} saved.` });
       await loadVpsPath(vpsPath);
     } catch (err) {
       setVpsStatus({ loading: false, error: err.message, success: null });
@@ -418,7 +418,7 @@ export default function Home() {
         setVpsSelectedFile('');
         setVpsFileContent('');
       }
-      setVpsStatus({ loading: false, error: null, success: `Removido: ${path}` });
+      setVpsStatus({ loading: false, error: null, success: `Removed: ${path}` });
       await loadVpsPath(vpsPath);
     } catch (err) {
       setVpsStatus({ loading: false, error: err.message, success: null });
@@ -433,12 +433,12 @@ export default function Home() {
       if (appendTerminal) {
         setVpsTerminalOutput((prev) => `${prev}${prev ? '\n\n' : ''}${output}`);
       }
-      setVpsStatus({ loading: false, error: null, success: `Comando executado (status ${data.exitStatus}).` });
+      setVpsStatus({ loading: false, error: null, success: `Command executed (status ${data.exitStatus}).` });
       return output;
     } catch (err) {
       setVpsStatus({ loading: false, error: err.message, success: null });
       if (appendTerminal) {
-        setVpsTerminalOutput((prev) => `${prev}${prev ? '\n\n' : ''}Erro: ${err.message}`);
+        setVpsTerminalOutput((prev) => `${prev}${prev ? '\n\n' : ''}Error: ${err.message}`);
       }
       return null;
     }
@@ -923,18 +923,18 @@ export default function Home() {
           </>
         ) : (
           <div className="space-y-3 text-xs">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Acesso VPS (SFTP + comandos)</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">VPS Access (SFTP + commands)</h2>
             <div className="grid grid-cols-2 gap-2">
               <input placeholder="Host" value={vpsConnection.host} onChange={(e) => setVpsConnection((prev) => ({ ...prev, host: e.target.value }))} className="border rounded px-2 py-1 col-span-2" />
-              <input placeholder="Usuário" value={vpsConnection.username} onChange={(e) => setVpsConnection((prev) => ({ ...prev, username: e.target.value }))} className="border rounded px-2 py-1" />
-              <input placeholder="Porta" value={vpsConnection.port} onChange={(e) => setVpsConnection((prev) => ({ ...prev, port: e.target.value }))} className="border rounded px-2 py-1" />
-              <input placeholder="Senha" type="password" value={vpsConnection.password} onChange={(e) => setVpsConnection((prev) => ({ ...prev, password: e.target.value }))} className="border rounded px-2 py-1 col-span-2" />
-              <textarea placeholder="Chave privada (opcional)" value={vpsConnection.privateKey} onChange={(e) => setVpsConnection((prev) => ({ ...prev, privateKey: e.target.value }))} className="border rounded px-2 py-1 col-span-2 min-h-20" />
+              <input placeholder="Username" value={vpsConnection.username} onChange={(e) => setVpsConnection((prev) => ({ ...prev, username: e.target.value }))} className="border rounded px-2 py-1" />
+              <input placeholder="Port" value={vpsConnection.port} onChange={(e) => setVpsConnection((prev) => ({ ...prev, port: e.target.value }))} className="border rounded px-2 py-1" />
+              <input placeholder="Password" type="password" value={vpsConnection.password} onChange={(e) => setVpsConnection((prev) => ({ ...prev, password: e.target.value }))} className="border rounded px-2 py-1 col-span-2" />
+              <textarea placeholder="Private key (optional)" value={vpsConnection.privateKey} onChange={(e) => setVpsConnection((prev) => ({ ...prev, privateKey: e.target.value }))} className="border rounded px-2 py-1 col-span-2 min-h-20" />
             </div>
 
             <div className="flex gap-2">
               <input value={vpsPath} onChange={(e) => setVpsPath(e.target.value)} className="border rounded px-2 py-1 flex-1" />
-              <button type="button" onClick={() => loadVpsPath(vpsPath)} className="bg-blue-600 text-white rounded px-2">Abrir</button>
+              <button type="button" onClick={() => loadVpsPath(vpsPath)} className="bg-blue-600 text-white rounded px-2">Open</button>
               <button type="button" onClick={() => {
                 const parent = vpsPath.split('/').slice(0, -1).join('/') || '/';
                 loadVpsPath(parent);
@@ -957,13 +957,13 @@ export default function Home() {
             </div>
 
             <div className="space-y-1">
-              <input placeholder="/caminho/arquivo.conf" value={vpsSelectedFile} onChange={(e) => setVpsSelectedFile(e.target.value)} className="border rounded px-2 py-1 w-full" />
+              <input placeholder="/path/file.conf" value={vpsSelectedFile} onChange={(e) => setVpsSelectedFile(e.target.value)} className="border rounded px-2 py-1 w-full" />
               <textarea value={vpsFileContent} onChange={(e) => setVpsFileContent(e.target.value)} className="border rounded px-2 py-1 w-full min-h-48 font-mono text-[11px]" />
               <div className="flex gap-2">
-                <button type="button" onClick={saveRemoteFile} className="bg-green-600 text-white rounded px-2 py-1">Salvar / Criar</button>
-                <button type="button" onClick={() => deleteRemotePath(vpsSelectedFile)} className="bg-red-600 text-white rounded px-2 py-1">Remover</button>
+                <button type="button" onClick={saveRemoteFile} className="bg-green-600 text-white rounded px-2 py-1">Save / Create</button>
+                <button type="button" onClick={() => deleteRemotePath(vpsSelectedFile)} className="bg-red-600 text-white rounded px-2 py-1">Remove</button>
                 <button type="button" onClick={async () => {
-                  const dirName = window.prompt('Digite o diretório para criar', `${vpsPath}/novo-diretorio`);
+                  const dirName = window.prompt('Enter the directory path to create', `${vpsPath}/new-directory`);
                   if (!dirName) return;
                   try {
                     await sendVpsRequest('create-directory', { path: dirName });
@@ -971,12 +971,12 @@ export default function Home() {
                   } catch (err) {
                     setVpsStatus({ loading: false, error: err.message, success: null });
                   }
-                }} className="bg-gray-700 text-white rounded px-2 py-1">Nova pasta</button>
+                }} className="bg-gray-700 text-white rounded px-2 py-1">New folder</button>
               </div>
             </div>
 
             <div className="space-y-1">
-              <h3 className="font-semibold text-[11px] uppercase">Comandos rápidos</h3>
+              <h3 className="font-semibold text-[11px] uppercase">Quick commands</h3>
               <div className="flex flex-wrap gap-1">
                 {['nginx -t', 'systemctl reload nginx', 'systemctl restart nginx', 'certbot renew', 'ls -la /etc/nginx/sites-available'].map((command) => (
                   <button key={command} type="button" onClick={() => { setVpsCommand(command); runVpsCommand(command); }} className="bg-black text-yellow-300 rounded px-2 py-1">{command}</button>
@@ -984,12 +984,12 @@ export default function Home() {
               </div>
               <div className="flex gap-2">
                 <input value={vpsCommand} onChange={(e) => setVpsCommand(e.target.value)} className="border rounded px-2 py-1 flex-1" />
-                <button type="button" onClick={() => runVpsCommand(vpsCommand)} className="bg-blue-700 text-white rounded px-2 py-1">Executar</button>
+                <button type="button" onClick={() => runVpsCommand(vpsCommand)} className="bg-blue-700 text-white rounded px-2 py-1">Run</button>
                 <button type="button" onClick={() => setVpsTerminalOpen(true)} className="bg-gray-800 text-white rounded px-2 py-1">Terminal</button>
               </div>
             </div>
 
-            {vpsStatus.loading && <p className="text-blue-600">Processando...</p>}
+            {vpsStatus.loading && <p className="text-blue-600">Processing...</p>}
             {vpsStatus.error && <p className="text-red-600 break-all">{vpsStatus.error}</p>}
             {vpsStatus.success && <p className="text-green-700">{vpsStatus.success}</p>}
           </div>
@@ -1000,10 +1000,10 @@ export default function Home() {
           <div className="bg-white text-black rounded w-11/12 max-w-5xl max-h-[90vh] p-4 flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <h2 className="font-semibold">Terminal VPS</h2>
-              <button type="button" onClick={() => setVpsTerminalOpen(false)} className="bg-gray-700 text-white rounded px-3 py-1">Fechar</button>
+              <button type="button" onClick={() => setVpsTerminalOpen(false)} className="bg-gray-700 text-white rounded px-3 py-1">Close</button>
             </div>
             <div className="flex gap-2">
-              <input value={vpsTerminalCommand} onChange={(e) => setVpsTerminalCommand(e.target.value)} placeholder="Digite um comando" className="border rounded px-2 py-1 flex-1 font-mono" />
+              <input value={vpsTerminalCommand} onChange={(e) => setVpsTerminalCommand(e.target.value)} placeholder="Type a command" className="border rounded px-2 py-1 flex-1 font-mono" />
               <button
                 type="button"
                 onClick={async () => {
@@ -1013,10 +1013,10 @@ export default function Home() {
                 }}
                 className="bg-blue-700 text-white rounded px-3 py-1"
               >
-                Executar
+                Run
               </button>
             </div>
-            <pre className="bg-black text-green-300 p-3 rounded flex-1 overflow-auto text-xs whitespace-pre-wrap">{vpsTerminalOutput || 'Sem comandos executados ainda.'}</pre>
+            <pre className="bg-black text-green-300 p-3 rounded flex-1 overflow-auto text-xs whitespace-pre-wrap">{vpsTerminalOutput || 'No commands executed yet.'}</pre>
           </div>
         </div>
       )}
