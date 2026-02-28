@@ -346,6 +346,7 @@ export default function Home({ vpsDefaults = {} }) {
   const [vpsTerminalOpen, setVpsTerminalOpen] = useState(false);
   const [vpsTerminalCommand, setVpsTerminalCommand] = useState('');
   const [vpsTerminalOutput, setVpsTerminalOutput] = useState('');
+  const [vpsTerminalCwd, setVpsTerminalCwd] = useState('~');
   const [vpsStatus, setVpsStatus] = useState({ loading: false, error: null, success: null });
   const highlightTimeoutRef = useRef(null);
   const logsIntervalRef = useRef(null);
@@ -428,8 +429,11 @@ export default function Home({ vpsDefaults = {} }) {
   const runVpsCommand = useCallback(async (command, appendTerminal = false) => {
     setVpsStatus({ loading: true, error: null, success: null });
     try {
-      const data = await sendVpsRequest('run-command', { command });
-      const output = [`$ ${command}`, data.stdout, data.stderr].filter(Boolean).join('\n');
+      const data = await sendVpsRequest('run-command', { command, cwd: vpsTerminalCwd });
+      const output = [`${data.cwd || vpsTerminalCwd} $ ${command}`, data.stdout, data.stderr].filter(Boolean).join('\n');
+      if (data.cwd) {
+        setVpsTerminalCwd(data.cwd);
+      }
       if (appendTerminal) {
         setVpsTerminalOutput((prev) => `${prev}${prev ? '\n\n' : ''}${output}`);
       }
@@ -442,7 +446,7 @@ export default function Home({ vpsDefaults = {} }) {
       }
       return null;
     }
-  }, [sendVpsRequest]);
+  }, [sendVpsRequest, vpsTerminalCwd]);
 
   const updateActionState = useCallback((id, newState) => {
     setActionState((prev) => ({ ...prev, [id]: { ...prev[id], ...newState } }));
@@ -1028,7 +1032,18 @@ export default function Home({ vpsDefaults = {} }) {
               <button type="button" onClick={() => setVpsTerminalOpen(false)} className="bg-gray-700 text-white rounded px-3 py-1">Close</button>
             </div>
             <div className="flex gap-2">
-              <input value={vpsTerminalCommand} onChange={(e) => setVpsTerminalCommand(e.target.value)} placeholder="Type a command" className="border rounded px-2 py-1 flex-1 font-mono" />
+              <input
+                value={vpsTerminalCommand}
+                onChange={(e) => setVpsTerminalCommand(e.target.value)}
+                onKeyDown={async (e) => {
+                  if (e.key !== 'Enter' || !vpsTerminalCommand.trim()) return;
+                  e.preventDefault();
+                  await runVpsCommand(vpsTerminalCommand, true);
+                  setVpsTerminalCommand('');
+                }}
+                placeholder="Type a command"
+                className="border rounded px-2 py-1 flex-1 font-mono"
+              />
               <button
                 type="button"
                 onClick={async () => {
