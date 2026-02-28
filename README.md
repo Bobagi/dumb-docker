@@ -33,7 +33,7 @@ git clone https://github.com/Bobagi/dumb-docker.git
 cd dumb-docker
 ```
 
-### 2) Create root `.env`
+### 2) Create root `.env` (same directory as `docker-compose.yml`)
 
 ```bash
 cat > .env <<EOF
@@ -42,7 +42,11 @@ BACKEND_PORT=8000
 EOF
 ```
 
-You can also keep your auth + VPS defaults in this same root `.env` (recommended when running with Docker Compose). The frontend service now loads root vars through `env_file: ./.env` and explicit environment mappings.
+You can also keep your auth + VPS defaults in this same root `.env` (recommended when running with Docker Compose).
+
+**Correct path:** `dumb-docker/.env` (project root, next to `docker-compose.yml`).
+
+The frontend service now loads root vars through `env_file: ./.env`, explicit environment mappings, and also mounts this file to `/app/.env.local` so Next.js reads it directly at startup.
 
 ### 3) Configure login for dashboard
 
@@ -63,6 +67,8 @@ Set at least:
 ```bash
 docker compose up --build
 ```
+
+> Important: run this command from the project root (`dumb-docker/`).
 
 Open: `http://YOUR_SERVER_IP:3000`
 
