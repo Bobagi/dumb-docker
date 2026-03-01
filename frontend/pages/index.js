@@ -601,6 +601,25 @@ export default function Home({ vpsDefaults = {} }) {
       await fetchApplications();
       await refreshBranches(appId, data?.branch || selectedBranch);
     } catch (err) {
+      const errorMessage = err?.message || '';
+      const composeTimedOut = action === 'start' && /504\s+Gateway\s+Time-?out/i.test(errorMessage);
+
+      if (composeTimedOut) {
+        setGitUiState((prev) => ({
+          ...prev,
+          [appId]: {
+            ...(prev[appId] || {}),
+            composeLoading: null,
+            gitError: null,
+          },
+        }));
+        await fetchApplications();
+        setTimeout(() => {
+          fetchApplications();
+        }, 2500);
+        return;
+      }
+
       setGitUiState((prev) => ({
         ...prev,
         [appId]: {
