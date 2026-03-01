@@ -145,7 +145,7 @@ function ApplicationNode({ data }) {
                 value={data.selectedBranch || ''}
                 onChange={(event) => data.onSelectBranch?.(event.target.value)}
                 disabled={data.operationInProgress || branchOptions.length === 0}
-                className="nodrag nopan flex-1 text-[11px] bg-black border border-yellow-400 text-yellow-100 rounded px-2 py-1"
+                className="nodrag nopan min-w-0 flex-1 text-[11px] bg-black border border-yellow-400 text-yellow-100 rounded px-2 py-1"
               >
                 {branchOptions.length === 0 ? (
                   <option value="">No branches</option>
@@ -160,7 +160,7 @@ function ApplicationNode({ data }) {
                 onMouseDown={handleCollapseMouseDown}
                 onClick={data.onRefreshBranches}
                 disabled={data.operationInProgress}
-                className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+                className="nodrag nopan shrink-0 whitespace-nowrap text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
                 title="Refreshes remote branch list and confirms which branch is currently active on the VPS project."
               >
                 ⟳
@@ -170,7 +170,7 @@ function ApplicationNode({ data }) {
                 onMouseDown={handleCollapseMouseDown}
                 onClick={data.onPullBranch}
                 disabled={data.operationInProgress || !data.selectedBranch}
-                className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+                className="nodrag nopan shrink-0 whitespace-nowrap text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
                 title="Checks out the selected branch on the VPS and runs git pull on it. The status above confirms success and the active branch."
               >
                 {data.pullLoading ? 'Pulling...' : 'Pull'}
@@ -180,7 +180,7 @@ function ApplicationNode({ data }) {
                 onMouseDown={handleCollapseMouseDown}
                 onClick={data.onComposeStart}
                 disabled={data.operationInProgress}
-                className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+                className="nodrag nopan shrink-0 whitespace-nowrap text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
                 title="Runs docker compose up --build -d for this project. If containers are already running, it reapplies/recreates services as needed to reflect changes."
               >
                 {data.composeLoading === 'start' ? 'Deploying...' : 'Deploy (up --build -d)'}
@@ -190,7 +190,7 @@ function ApplicationNode({ data }) {
                 onMouseDown={handleCollapseMouseDown}
                 onClick={data.onComposeStop}
                 disabled={data.operationInProgress}
-                className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+                className="nodrag nopan shrink-0 whitespace-nowrap text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
                 title="Runs docker compose stop for this project to stop containers without removing resources."
               >
                 {data.composeLoading === 'stop' ? 'Stopping...' : 'Stop'}
