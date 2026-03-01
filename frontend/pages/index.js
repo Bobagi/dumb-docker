@@ -130,16 +130,22 @@ function ApplicationNode({ data }) {
               );
             })()}
             {(data.gitBranch || data.gitCommit) && (
-              <div className="text-[11px] text-yellow-100/90 mt-2">
+              <div className="text-[11px] text-yellow-100/90 mt-2 truncate" title={`${data.gitBranch || 'unknown'} ${data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}`}>
                 {data.gitBranch || 'unknown'} {data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}
               </div>
             )}
+            <fieldset className="mt-2 rounded border border-yellow-400/40 px-2 py-1 text-[10px] text-yellow-100/90">
+              <legend className="px-1 text-[10px] text-yellow-300 uppercase tracking-wide">Git/Deploy status (VPS)</legend>
+              <div className="truncate" title={`Active branch on VPS: ${data.currentBranch || data.gitBranch || 'unknown'}`}>Active branch on VPS: <span className="text-yellow-200">{data.currentBranch || data.gitBranch || 'unknown'}</span></div>
+              <div className="truncate" title={`Selected branch: ${data.selectedBranch || 'none'}`}>Selected branch: <span className="text-yellow-200">{data.selectedBranch || 'none'}</span></div>
+              <div className="truncate" title={data.operationStatus || 'Waiting for action.'}>{data.operationStatus || 'Waiting for action.'}</div>
+            </fieldset>
             <div className="mt-2 flex items-center gap-2">
               <select
                 value={data.selectedBranch || ''}
                 onChange={(event) => data.onSelectBranch?.(event.target.value)}
                 disabled={data.operationInProgress || branchOptions.length === 0}
-                className="nodrag nopan flex-1 text-[11px] bg-black border border-yellow-400 text-yellow-100 rounded px-2 py-1"
+                className="nodrag nopan min-w-0 flex-1 text-[11px] bg-black border border-yellow-400 text-yellow-100 rounded px-2 py-1"
               >
                 {branchOptions.length === 0 ? (
                   <option value="">No branches</option>
@@ -154,8 +160,8 @@ function ApplicationNode({ data }) {
                 onMouseDown={handleCollapseMouseDown}
                 onClick={data.onRefreshBranches}
                 disabled={data.operationInProgress}
-                className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
-                title="Refresh branches"
+                className="nodrag nopan shrink-0 whitespace-nowrap text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+                title="Refreshes remote branch list and confirms which branch is currently active on the VPS project."
               >
                 ⟳
               </button>
@@ -164,7 +170,8 @@ function ApplicationNode({ data }) {
                 onMouseDown={handleCollapseMouseDown}
                 onClick={data.onPullBranch}
                 disabled={data.operationInProgress || !data.selectedBranch}
-                className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+                className="nodrag nopan shrink-0 whitespace-nowrap text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+                title="Checks out the selected branch on the VPS and runs git pull on it. The status above confirms success and the active branch."
               >
                 {data.pullLoading ? 'Pulling...' : 'Pull'}
               </button>
@@ -173,16 +180,18 @@ function ApplicationNode({ data }) {
                 onMouseDown={handleCollapseMouseDown}
                 onClick={data.onComposeStart}
                 disabled={data.operationInProgress}
-                className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+                className="nodrag nopan shrink-0 whitespace-nowrap text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+                title="Runs docker compose up --build -d for this project. If containers are already running, it reapplies/recreates services as needed to reflect changes."
               >
-                {data.composeLoading === 'start' ? 'Starting...' : 'Start'}
+                {data.composeLoading === 'start' ? 'Deploying...' : 'Deploy (up --build -d)'}
               </button>
               <button
                 type="button"
                 onMouseDown={handleCollapseMouseDown}
                 onClick={data.onComposeStop}
                 disabled={data.operationInProgress}
-                className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+                className="nodrag nopan shrink-0 whitespace-nowrap text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+                title="Runs docker compose stop for this project to stop containers without removing resources."
               >
                 {data.composeLoading === 'stop' ? 'Stopping...' : 'Stop'}
               </button>
@@ -283,7 +292,7 @@ const BASE_NODE_HEIGHT = 240;
 const PORT_LINE_HEIGHT = 18;
 const PORT_SECTION_PADDING = 12;
 const ROW_VERTICAL_GAP = 40;
-const APP_HEADER_HEIGHT = 170;
+const APP_HEADER_HEIGHT = 250;
 const NODE_WIDTH = 192;
 const HORIZONTAL_GAP = 28;
 const GROUP_PADDING = 20;
@@ -490,6 +499,8 @@ export default function Home({ vpsDefaults = {} }) {
             branchLoading: false,
             loadedOnce: true,
             gitError: null,
+            currentBranch: activeBranch,
+            operationStatus: `Branches refreshed. VPS active branch: ${activeBranch || 'unknown branch'}.`,
           },
         };
       });
@@ -527,12 +538,13 @@ export default function Home({ vpsDefaults = {} }) {
 
     setGitUiState((prev) => ({
       ...prev,
-      [appId]: {
-        ...(prev[appId] || {}),
-        pullLoading: true,
-        gitError: null,
-      },
-    }));
+        [appId]: {
+          ...(prev[appId] || {}),
+          pullLoading: true,
+          gitError: null,
+          operationStatus: 'Running pull on selected branch...',
+        },
+      }));
 
     try {
       const response = await fetch(`/api/applications/${appId}/pull`, {
@@ -551,6 +563,8 @@ export default function Home({ vpsDefaults = {} }) {
           ...(prev[appId] || {}),
           pullLoading: false,
           gitError: null,
+          currentBranch: data?.currentBranch || selectedBranch,
+          operationStatus: `Pull completed successfully on ${data?.currentBranch || selectedBranch}.`,
         },
       }));
       await fetchApplications();
@@ -562,6 +576,7 @@ export default function Home({ vpsDefaults = {} }) {
           ...(prev[appId] || {}),
           pullLoading: false,
           gitError: err.message,
+          operationStatus: 'Pull failed. Check the error below.',
         },
       }));
     }
@@ -572,12 +587,13 @@ export default function Home({ vpsDefaults = {} }) {
     if (!appId || appId === 'unassigned') return;
     setGitUiState((prev) => ({
       ...prev,
-      [appId]: {
-        ...(prev[appId] || {}),
-        composeLoading: action,
-        gitError: null,
-      },
-    }));
+        [appId]: {
+          ...(prev[appId] || {}),
+          composeLoading: action,
+          gitError: null,
+          operationStatus: action === 'start' ? 'Running deploy (compose up --build -d)...' : 'Stopping containers (compose stop)...',
+        },
+      }));
 
     try {
       const response = await fetch(`/api/applications/${appId}/compose`, {
@@ -596,6 +612,7 @@ export default function Home({ vpsDefaults = {} }) {
           ...(prev[appId] || {}),
           composeLoading: null,
           gitError: null,
+          operationStatus: action === 'start' ? 'Deploy completed successfully.' : 'Containers stopped successfully.',
         },
       }));
       await fetchApplications();
@@ -611,6 +628,7 @@ export default function Home({ vpsDefaults = {} }) {
             ...(prev[appId] || {}),
             composeLoading: null,
             gitError: null,
+            operationStatus: 'Deploy request sent. Refreshing container status...',
           },
         }));
         await fetchApplications();
@@ -626,6 +644,7 @@ export default function Home({ vpsDefaults = {} }) {
           ...(prev[appId] || {}),
           composeLoading: null,
           gitError: err.message,
+          operationStatus: 'Compose action failed. Check the error below.',
         },
       }));
     }
@@ -783,6 +802,8 @@ export default function Home({ vpsDefaults = {} }) {
           pullLoading: gitUiState[app.id]?.pullLoading || false,
           composeLoading: gitUiState[app.id]?.composeLoading || null,
           gitError: gitUiState[app.id]?.gitError || null,
+          currentBranch: gitUiState[app.id]?.currentBranch || app.gitBranch || '',
+          operationStatus: gitUiState[app.id]?.operationStatus || null,
           operationInProgress: !!(gitUiState[app.id]?.branchLoading || gitUiState[app.id]?.pullLoading || gitUiState[app.id]?.composeLoading),
           onSelectBranch: (branch) => setGitUiState((prev) => ({
             ...prev,
