@@ -130,15 +130,15 @@ function ApplicationNode({ data }) {
               );
             })()}
             {(data.gitBranch || data.gitCommit) && (
-              <div className="text-[11px] text-yellow-100/90 mt-2">
+              <div className="text-[11px] text-yellow-100/90 mt-2 truncate" title={`${data.gitBranch || 'unknown'} ${data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}`}>
                 {data.gitBranch || 'unknown'} {data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}
               </div>
             )}
             <fieldset className="mt-2 rounded border border-yellow-400/40 px-2 py-1 text-[10px] text-yellow-100/90">
               <legend className="px-1 text-[10px] text-yellow-300 uppercase tracking-wide">Git/Deploy status (VPS)</legend>
-              <div>Active branch on VPS: <span className="text-yellow-200">{data.currentBranch || data.gitBranch || 'unknown'}</span></div>
-              <div>Selected branch: <span className="text-yellow-200">{data.selectedBranch || 'none'}</span></div>
-              <div>{data.operationStatus || 'Waiting for action.'}</div>
+              <div className="truncate" title={`Active branch on VPS: ${data.currentBranch || data.gitBranch || 'unknown'}`}>Active branch on VPS: <span className="text-yellow-200">{data.currentBranch || data.gitBranch || 'unknown'}</span></div>
+              <div className="truncate" title={`Selected branch: ${data.selectedBranch || 'none'}`}>Selected branch: <span className="text-yellow-200">{data.selectedBranch || 'none'}</span></div>
+              <div className="truncate" title={data.operationStatus || 'Waiting for action.'}>{data.operationStatus || 'Waiting for action.'}</div>
             </fieldset>
             <div className="mt-2 flex items-center gap-2">
               <select
