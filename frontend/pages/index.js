@@ -134,6 +134,12 @@ function ApplicationNode({ data }) {
                 {data.gitBranch || 'unknown'} {data.gitCommit ? `• ${data.gitCommit.slice(0, 8)}` : ''}
               </div>
             )}
+            <fieldset className="mt-2 rounded border border-yellow-400/40 px-2 py-1 text-[10px] text-yellow-100/90">
+              <legend className="px-1 text-[10px] text-yellow-300 uppercase tracking-wide">Git/Deploy status (VPS)</legend>
+              <div>Branch ativa na VPS: <span className="text-yellow-200">{data.currentBranch || data.gitBranch || 'desconhecida'}</span></div>
+              <div>Branch selecionada: <span className="text-yellow-200">{data.selectedBranch || 'nenhuma'}</span></div>
+              <div>{data.operationStatus || 'Aguardando ação.'}</div>
+            </fieldset>
             <div className="mt-2 flex items-center gap-2">
               <select
                 value={data.selectedBranch || ''}
@@ -155,7 +161,7 @@ function ApplicationNode({ data }) {
                 onClick={data.onRefreshBranches}
                 disabled={data.operationInProgress}
                 className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
-                title="Refresh branches"
+                title="Atualiza a lista de branches remotas e também confirma qual branch está ativa agora no projeto da VPS."
               >
                 ⟳
               </button>
@@ -165,6 +171,7 @@ function ApplicationNode({ data }) {
                 onClick={data.onPullBranch}
                 disabled={data.operationInProgress || !data.selectedBranch}
                 className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+                title="Faz checkout da branch selecionada na VPS e executa git pull nela. O status acima mostra se deu certo e qual branch ficou ativa."
               >
                 {data.pullLoading ? 'Pulling...' : 'Pull'}
               </button>
@@ -174,8 +181,9 @@ function ApplicationNode({ data }) {
                 onClick={data.onComposeStart}
                 disabled={data.operationInProgress}
                 className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+                title="Executa docker compose up --build -d neste projeto. Se os containers já estiverem ativos, ele reaplica/recria conforme necessário para refletir mudanças."
               >
-                {data.composeLoading === 'start' ? 'Starting...' : 'Start'}
+                {data.composeLoading === 'start' ? 'Deploying...' : 'Deploy (up --build -d)'}
               </button>
               <button
                 type="button"
@@ -183,6 +191,7 @@ function ApplicationNode({ data }) {
                 onClick={data.onComposeStop}
                 disabled={data.operationInProgress}
                 className="nodrag nopan text-black bg-yellow-500 hover:bg-yellow-400 disabled:opacity-60 rounded px-2 py-1 text-[11px]"
+                title="Executa docker compose stop neste projeto para parar os containers sem remover os recursos."
               >
                 {data.composeLoading === 'stop' ? 'Stopping...' : 'Stop'}
               </button>
@@ -490,6 +499,8 @@ export default function Home({ vpsDefaults = {} }) {
             branchLoading: false,
             loadedOnce: true,
             gitError: null,
+            currentBranch: activeBranch,
+            operationStatus: `Branches atualizadas. VPS em ${activeBranch || 'branch desconhecida'}.`,
           },
         };
       });
@@ -527,12 +538,13 @@ export default function Home({ vpsDefaults = {} }) {
 
     setGitUiState((prev) => ({
       ...prev,
-      [appId]: {
-        ...(prev[appId] || {}),
-        pullLoading: true,
-        gitError: null,
-      },
-    }));
+        [appId]: {
+          ...(prev[appId] || {}),
+          pullLoading: true,
+          gitError: null,
+          operationStatus: 'Executando pull na branch selecionada...'
+        },
+      }));
 
     try {
       const response = await fetch(`/api/applications/${appId}/pull`, {
@@ -551,6 +563,8 @@ export default function Home({ vpsDefaults = {} }) {
           ...(prev[appId] || {}),
           pullLoading: false,
           gitError: null,
+          currentBranch: data?.currentBranch || selectedBranch,
+          operationStatus: `Pull concluído com sucesso em ${data?.currentBranch || selectedBranch}.`,
         },
       }));
       await fetchApplications();
@@ -562,6 +576,7 @@ export default function Home({ vpsDefaults = {} }) {
           ...(prev[appId] || {}),
           pullLoading: false,
           gitError: err.message,
+          operationStatus: 'Falha no pull. Verifique o erro abaixo.',
         },
       }));
     }
@@ -572,12 +587,13 @@ export default function Home({ vpsDefaults = {} }) {
     if (!appId || appId === 'unassigned') return;
     setGitUiState((prev) => ({
       ...prev,
-      [appId]: {
-        ...(prev[appId] || {}),
-        composeLoading: action,
-        gitError: null,
-      },
-    }));
+        [appId]: {
+          ...(prev[appId] || {}),
+          composeLoading: action,
+          gitError: null,
+          operationStatus: action === 'start' ? 'Executando deploy (compose up --build -d)...' : 'Parando containers (compose stop)...',
+        },
+      }));
 
     try {
       const response = await fetch(`/api/applications/${appId}/compose`, {
@@ -596,6 +612,7 @@ export default function Home({ vpsDefaults = {} }) {
           ...(prev[appId] || {}),
           composeLoading: null,
           gitError: null,
+          operationStatus: action === 'start' ? 'Deploy concluído com sucesso.' : 'Containers parados com sucesso.',
         },
       }));
       await fetchApplications();
@@ -611,6 +628,7 @@ export default function Home({ vpsDefaults = {} }) {
             ...(prev[appId] || {}),
             composeLoading: null,
             gitError: null,
+            operationStatus: 'Deploy enviado. Atualizando status dos containers...',
           },
         }));
         await fetchApplications();
@@ -626,6 +644,7 @@ export default function Home({ vpsDefaults = {} }) {
           ...(prev[appId] || {}),
           composeLoading: null,
           gitError: err.message,
+          operationStatus: 'Falha na operação de compose. Verifique o erro abaixo.',
         },
       }));
     }
@@ -783,6 +802,8 @@ export default function Home({ vpsDefaults = {} }) {
           pullLoading: gitUiState[app.id]?.pullLoading || false,
           composeLoading: gitUiState[app.id]?.composeLoading || null,
           gitError: gitUiState[app.id]?.gitError || null,
+          currentBranch: gitUiState[app.id]?.currentBranch || app.gitBranch || '',
+          operationStatus: gitUiState[app.id]?.operationStatus || null,
           operationInProgress: !!(gitUiState[app.id]?.branchLoading || gitUiState[app.id]?.pullLoading || gitUiState[app.id]?.composeLoading),
           onSelectBranch: (branch) => setGitUiState((prev) => ({
             ...prev,
