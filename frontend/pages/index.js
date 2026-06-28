@@ -1,4 +1,4 @@
-import { getSession } from "next-auth/react";
+import { getSession, signOut } from "next-auth/react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import ReactFlow, { Background } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -33,6 +33,75 @@ function formatBytes(bytes) {
     idx += 1;
   }
   return `${size.toFixed(size >= 10 || idx === 0 ? 0 : 1)} ${units[idx]}`;
+}
+
+function formatDuration(seconds) {
+  if (!seconds || seconds < 0) return '—';
+  const days = Math.floor(seconds / 86400);
+  const hours = Math.floor((seconds % 86400) / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+// Files with these extensions are treated as binary: opening them streams a
+// download instead of corrupting the text editor with decoded bytes.
+const BINARY_EXTENSIONS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'bmp', 'tiff', 'pdf',
+  'zip', 'gz', 'tar', 'tgz', 'bz2', 'xz', '7z', 'rar', 'jar', 'war',
+  'mp3', 'mp4', 'mov', 'avi', 'mkv', 'webm', 'wav', 'flac', 'ogg',
+  'woff', 'woff2', 'ttf', 'otf', 'eot', 'exe', 'bin', 'dll', 'so',
+  'o', 'class', 'wasm', 'db', 'sqlite', 'sqlite3', 'pyc', 'deb', 'rpm',
+  'img', 'iso', 'keystore', 'jks', 'p12', 'pfx', 'der',
+]);
+
+function isBinaryFilename(name) {
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  return name.includes('.') && BINARY_EXTENSIONS.has(ext);
+}
+
+function uint8ToBase64(bytes) {
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+function base64ToUint8(base64) {
+  const binary = atob(base64 || '');
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+// Heuristic: a NUL (0) or replacement char (0xFFFD, from a failed utf-8 decode)
+// in the first chunk means the file is binary and shouldn't be edited as text.
+function looksBinaryText(text) {
+  const limit = Math.min(text.length, 100000);
+  for (let i = 0; i < limit; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code === 0 || code === 0xfffd) return true;
+  }
+  return false;
+}
+
+function StatBar({ label, value, percent }) {
+  const safePercent = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+  const barColor = safePercent >= 90 ? 'bg-red-500' : safePercent >= 70 ? 'bg-yellow-500' : 'bg-blue-500';
+  return (
+    <div>
+      <div className="flex justify-between text-[11px] text-gray-600">
+        <span className="font-semibold text-gray-700">{label}</span>
+        <span>{value}</span>
+      </div>
+      <div className="mt-1 h-2 w-full rounded bg-gray-200 overflow-hidden">
+        <div className={`h-full ${barColor}`} style={{ width: `${safePercent}%` }} />
+      </div>
+    </div>
+  );
 }
 
 function UsagePie({ label, sharePercent }) {
@@ -346,6 +415,7 @@ export default function Home({ vpsDefaults = {} }) {
     username: vpsDefaults.username || process.env.NEXT_PUBLIC_VPS_USERNAME || '',
     password: vpsDefaults.password || process.env.NEXT_PUBLIC_VPS_PASSWORD || '',
     privateKey: vpsDefaults.privateKey || process.env.NEXT_PUBLIC_VPS_PRIVATE_KEY || '',
+    privateKeyPassphrase: '',
   });
   const [vpsPath, setVpsPath] = useState(vpsDefaults.path || process.env.NEXT_PUBLIC_VPS_PATH || '/etc/nginx/sites-available');
   const [vpsEntries, setVpsEntries] = useState([]);
@@ -357,8 +427,15 @@ export default function Home({ vpsDefaults = {} }) {
   const [vpsTerminalOutput, setVpsTerminalOutput] = useState('');
   const [vpsTerminalCwd, setVpsTerminalCwd] = useState('~');
   const [vpsStatus, setVpsStatus] = useState({ loading: false, error: null, success: null });
+  const [vpsConnState, setVpsConnState] = useState({ status: 'unknown', user: null, info: null });
+  const [vpsFileBinary, setVpsFileBinary] = useState(false);
+  const [systemOverview, setSystemOverview] = useState(null);
+  const [systemStatus, setSystemStatus] = useState({ loading: false, error: null });
   const highlightTimeoutRef = useRef(null);
   const logsIntervalRef = useRef(null);
+  const vpsUploadInputRef = useRef(null);
+  const vpsTerminalHistoryRef = useRef([]);
+  const vpsTerminalHistoryIndexRef = useRef(-1);
 
   const sendVpsRequest = useCallback(async (action, payload) => {
     const response = await fetch(`/api/vps/${action}`, {
@@ -370,6 +447,7 @@ export default function Home({ vpsDefaults = {} }) {
         username: vpsConnection.username,
         password: vpsConnection.password || null,
         private_key: vpsConnection.privateKey || null,
+        private_key_passphrase: vpsConnection.privateKeyPassphrase || null,
         ...payload,
       }),
     });
@@ -392,17 +470,85 @@ export default function Home({ vpsDefaults = {} }) {
     }
   }, [sendVpsRequest, vpsPath]);
 
-  const openRemoteFile = useCallback(async (path) => {
+  const downloadVpsFile = useCallback(async (path) => {
+    if (!path) return;
     setVpsStatus({ loading: true, error: null, success: null });
     try {
-      const data = await sendVpsRequest('read-file', { path });
-      setVpsSelectedFile(path);
-      setVpsFileContent(data.content || '');
-      setVpsStatus({ loading: false, error: null, success: `File ${path} loaded.` });
+      const data = await sendVpsRequest('download-file', { path });
+      const bytes = base64ToUint8(data.content_base64);
+      const url = URL.createObjectURL(new Blob([bytes]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = data.filename || path.split('/').pop() || 'download';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setVpsStatus({ loading: false, error: null, success: `Downloaded ${link.download} (${formatBytes(data.size)}).` });
     } catch (err) {
       setVpsStatus({ loading: false, error: err.message, success: null });
     }
   }, [sendVpsRequest]);
+
+  const uploadVpsFiles = useCallback(async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (files.length === 0) return;
+    setVpsStatus({ loading: true, error: null, success: null });
+    try {
+      for (const file of files) {
+        const buffer = await file.arrayBuffer();
+        const contentBase64 = uint8ToBase64(new Uint8Array(buffer));
+        await sendVpsRequest('upload-file', { path: vpsPath, filename: file.name, content_base64: contentBase64 });
+      }
+      setVpsStatus({ loading: false, error: null, success: `Uploaded ${files.length} file(s) to ${vpsPath}.` });
+      await loadVpsPath(vpsPath);
+    } catch (err) {
+      setVpsStatus({ loading: false, error: err.message, success: null });
+    }
+  }, [loadVpsPath, sendVpsRequest, vpsPath]);
+
+  const renameRemotePath = useCallback(async (path, isDirectory) => {
+    if (!path) return;
+    const base = path.split('/').pop();
+    const parent = path.split('/').slice(0, -1).join('/');
+    const nextName = window.prompt(`Rename ${isDirectory ? 'folder' : 'file'} "${base}" to:`, base);
+    if (!nextName || nextName === base) return;
+    const newPath = parent ? `${parent}/${nextName}` : `/${nextName}`;
+    setVpsStatus({ loading: true, error: null, success: null });
+    try {
+      await sendVpsRequest('rename-path', { path, new_path: newPath });
+      if (vpsSelectedFile === path) setVpsSelectedFile(newPath);
+      setVpsStatus({ loading: false, error: null, success: `Renamed to ${nextName}.` });
+      await loadVpsPath(vpsPath);
+    } catch (err) {
+      setVpsStatus({ loading: false, error: err.message, success: null });
+    }
+  }, [loadVpsPath, sendVpsRequest, vpsPath, vpsSelectedFile]);
+
+  const openRemoteFile = useCallback(async (path) => {
+    if (isBinaryFilename(path)) {
+      await downloadVpsFile(path);
+      return;
+    }
+    setVpsStatus({ loading: true, error: null, success: null });
+    try {
+      const data = await sendVpsRequest('read-file', { path });
+      const content = data.content || '';
+      const looksBinary = looksBinaryText(content);
+      setVpsSelectedFile(path);
+      setVpsFileContent(content);
+      setVpsFileBinary(looksBinary);
+      setVpsStatus({
+        loading: false,
+        error: null,
+        success: looksBinary
+          ? `${path} looks binary — editing disabled, use Download instead.`
+          : `File ${path} loaded.`,
+      });
+    } catch (err) {
+      setVpsStatus({ loading: false, error: err.message, success: null });
+    }
+  }, [downloadVpsFile, sendVpsRequest]);
 
   const saveRemoteFile = useCallback(async () => {
     if (!vpsSelectedFile) {
@@ -456,6 +602,38 @@ export default function Home({ vpsDefaults = {} }) {
       return null;
     }
   }, [sendVpsRequest, vpsTerminalCwd]);
+
+  const testVpsConnection = useCallback(async () => {
+    if (!vpsConnection.host || !vpsConnection.username) {
+      setVpsStatus({ loading: false, error: 'Host and username are required to connect.', success: null });
+      return;
+    }
+    setVpsConnState({ status: 'testing', user: null, info: null });
+    setVpsStatus({ loading: true, error: null, success: null });
+    try {
+      const data = await sendVpsRequest('test-connection', {});
+      setVpsConnState({ status: 'ok', user: data.user, info: data.info });
+      setVpsStatus({ loading: false, error: null, success: `Connected as ${data.user}@${vpsConnection.host}.` });
+    } catch (err) {
+      setVpsConnState({ status: 'error', user: null, info: null });
+      setVpsStatus({ loading: false, error: err.message, success: null });
+    }
+  }, [sendVpsRequest, vpsConnection.host, vpsConnection.username]);
+
+  const fetchSystemOverview = useCallback(async () => {
+    setSystemStatus({ loading: true, error: null });
+    try {
+      const res = await fetch('/api/system/overview');
+      const data = await readJsonSafe(res);
+      if (!res.ok) {
+        throw new Error(data?.detail || data?.error || res.statusText);
+      }
+      setSystemOverview(data);
+      setSystemStatus({ loading: false, error: null });
+    } catch (err) {
+      setSystemStatus({ loading: false, error: err.message });
+    }
+  }, []);
 
   const updateActionState = useCallback((id, newState) => {
     setActionState((prev) => ({ ...prev, [id]: { ...prev[id], ...newState } }));
@@ -877,6 +1055,12 @@ export default function Home({ vpsDefaults = {} }) {
   useEffect(() => { fetchApplications(); }, [fetchApplications]);
 
   useEffect(() => {
+    if (sidebarTab === 'system') {
+      fetchSystemOverview();
+    }
+  }, [sidebarTab, fetchSystemOverview]);
+
+  useEffect(() => {
     if (!applicationsError) return undefined;
     const timer = setTimeout(() => {
       fetchApplications();
@@ -958,12 +1142,27 @@ export default function Home({ vpsDefaults = {} }) {
         </HighlightContext.Provider>
       </div>
       <aside className="w-[26rem] border-l border-gray-200 bg-white text-black overflow-y-auto p-4 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <img src="/favicon.svg" alt="" className="w-5 h-5 shrink-0" />
+            <span className="font-semibold text-sm truncate">Dumb Docker</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => signOut({ callbackUrl: '/login' })}
+            className="shrink-0 rounded px-2 py-1 text-[11px] font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300"
+            title="Sign out of the dashboard"
+          >
+            Sign out
+          </button>
+        </div>
         <div className="flex gap-2">
           <button type="button" onClick={() => setSidebarTab('ports')} className={`rounded px-3 py-1 text-xs font-semibold ${sidebarTab === 'ports' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}>Ports</button>
+          <button type="button" onClick={() => setSidebarTab('system')} className={`rounded px-3 py-1 text-xs font-semibold ${sidebarTab === 'system' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}>System</button>
           <button type="button" onClick={() => setSidebarTab('vps')} className={`rounded px-3 py-1 text-xs font-semibold ${sidebarTab === 'vps' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'}`}>VPS SFTP</button>
         </div>
 
-        {sidebarTab === 'ports' ? (
+        {sidebarTab === 'ports' && (
           <>
             <div>
               <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">External Ports</h2>
@@ -990,7 +1189,57 @@ export default function Home({ vpsDefaults = {} }) {
               </ul>
             )}
           </>
-        ) : (
+        )}
+
+        {sidebarTab === 'system' && (
+          <div className="space-y-3 text-xs">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">Host overview</h2>
+              <button type="button" onClick={fetchSystemOverview} disabled={systemStatus.loading} className="rounded px-2 py-1 text-[11px] font-semibold bg-blue-600 text-white disabled:opacity-60">{systemStatus.loading ? 'Refreshing…' : 'Refresh'}</button>
+            </div>
+            <p className="text-[11px] text-gray-500">Live stats from the machine the dashboard runs on.</p>
+            {systemStatus.error && <p className="text-xs text-red-500 break-all">{systemStatus.error}</p>}
+            {!systemOverview && !systemStatus.error && <p className="text-xs text-gray-500">Loading…</p>}
+            {systemOverview && (
+              <div className="space-y-3">
+                <StatBar
+                  label="CPU load (1m)"
+                  value={`${(systemOverview.loadAverage?.['1m'] ?? 0).toFixed(2)} / ${systemOverview.cpuCount} cores`}
+                  percent={systemOverview.cpuCount ? ((systemOverview.loadAverage?.['1m'] || 0) / systemOverview.cpuCount) * 100 : 0}
+                />
+                <StatBar
+                  label="Memory"
+                  value={`${formatBytes(systemOverview.memory?.used)} / ${formatBytes(systemOverview.memory?.total)}`}
+                  percent={systemOverview.memory?.usedPercent}
+                />
+                <StatBar
+                  label={`Disk (${systemOverview.disk?.path || '/'})`}
+                  value={`${formatBytes(systemOverview.disk?.used)} / ${formatBytes(systemOverview.disk?.total)}`}
+                  percent={systemOverview.disk?.usedPercent}
+                />
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="bg-gray-100 rounded px-2 py-2">
+                    <div className="text-gray-500 uppercase tracking-wide text-[10px]">Uptime</div>
+                    <div className="font-semibold">{formatDuration(systemOverview.uptimeSeconds)}</div>
+                  </div>
+                  <div className="bg-gray-100 rounded px-2 py-2">
+                    <div className="text-gray-500 uppercase tracking-wide text-[10px]">Containers</div>
+                    <div className="font-semibold">{systemOverview.docker?.containersRunning ?? 0} run / {systemOverview.docker?.containers ?? 0}</div>
+                  </div>
+                </div>
+                <div className="border rounded p-2 space-y-1">
+                  <div className="font-semibold text-gray-700 uppercase tracking-wide text-[10px]">Docker disk usage</div>
+                  <div className="flex justify-between"><span className="text-gray-600">Images ({systemOverview.docker?.images ?? 0})</span><span>{formatBytes(systemOverview.docker?.imagesSize)}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">Volumes ({systemOverview.docker?.volumes ?? 0})</span><span>{formatBytes(systemOverview.docker?.volumesSize)}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">Build cache</span><span>{formatBytes(systemOverview.docker?.buildCacheSize)}</span></div>
+                </div>
+                <div className="text-[10px] text-gray-400 break-all">Scan paths: {(systemOverview.scanPaths || []).join(', ')}</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {sidebarTab === 'vps' && (
           <div className="space-y-3 text-xs">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700">VPS Access (SFTP + commands)</h2>
             <div className="grid grid-cols-2 gap-2">
@@ -999,6 +1248,31 @@ export default function Home({ vpsDefaults = {} }) {
               <input placeholder="Port" value={vpsConnection.port} onChange={(e) => setVpsConnection((prev) => ({ ...prev, port: e.target.value }))} className="border rounded px-2 py-1" />
               <input placeholder="Password" type="password" value={vpsConnection.password} onChange={(e) => setVpsConnection((prev) => ({ ...prev, password: e.target.value }))} className="border rounded px-2 py-1 col-span-2" />
               <textarea placeholder="Private key (optional)" value={vpsConnection.privateKey} onChange={(e) => setVpsConnection((prev) => ({ ...prev, privateKey: e.target.value }))} className="border rounded px-2 py-1 col-span-2 min-h-20" />
+              {vpsConnection.privateKey && (
+                <input placeholder="Private key passphrase (if encrypted)" type="password" value={vpsConnection.privateKeyPassphrase} onChange={(e) => setVpsConnection((prev) => ({ ...prev, privateKeyPassphrase: e.target.value }))} className="border rounded px-2 py-1 col-span-2" />
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={testVpsConnection} disabled={vpsStatus.loading} className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded px-3 py-1 font-semibold">
+                {vpsConnState.status === 'testing' ? 'Connecting…' : 'Test connection'}
+              </button>
+              {vpsConnState.status === 'ok' && <span className="text-emerald-700 truncate" title={vpsConnState.info || ''}>✓ {vpsConnState.user}@{vpsConnection.host}</span>}
+              {vpsConnState.status === 'error' && <span className="text-red-600">✕ Connection failed</span>}
+              {vpsConnState.status === 'unknown' && <span className="text-gray-400">Not connected yet</span>}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1 text-[11px] text-gray-600">
+              <button type="button" onClick={() => loadVpsPath('/')} className="hover:text-blue-700 hover:underline" title="Go to root">/</button>
+              {vpsPath.split('/').filter(Boolean).map((seg, idx, arr) => {
+                const segPath = `/${arr.slice(0, idx + 1).join('/')}`;
+                return (
+                  <span key={segPath} className="flex items-center gap-1 min-w-0">
+                    <span className="text-gray-400">›</span>
+                    <button type="button" onClick={() => loadVpsPath(segPath)} className="hover:text-blue-700 hover:underline truncate max-w-[9rem]" title={segPath}>{seg}</button>
+                  </span>
+                );
+              })}
             </div>
 
             <div className="flex gap-2">
@@ -1010,27 +1284,49 @@ export default function Home({ vpsDefaults = {} }) {
               }} className="bg-gray-600 text-white rounded px-2">↑</button>
             </div>
 
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-gray-500">{vpsEntries.length} item(s)</span>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => loadVpsPath(vpsPath)} className="text-[11px] text-blue-700 hover:underline">Refresh</button>
+                <button type="button" onClick={() => vpsUploadInputRef.current?.click()} className="text-[11px] text-blue-700 hover:underline" title={`Upload file(s) into ${vpsPath}`}>⬆ Upload here</button>
+              </div>
+            </div>
+            <input
+              ref={vpsUploadInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => { uploadVpsFiles(e.target.files); e.target.value = ''; }}
+            />
             <div className="border rounded p-2 max-h-52 overflow-auto space-y-1">
+              {vpsEntries.length === 0 && <p className="text-gray-400 px-1">Empty or not loaded.</p>}
               {vpsEntries.map((entry) => (
                 <div key={entry.path} className="flex items-center gap-1">
                   <button
                     type="button"
-                    className="flex-1 text-left hover:bg-gray-100 rounded px-1 py-0.5"
+                    className="flex-1 min-w-0 text-left hover:bg-gray-100 rounded px-1 py-0.5 truncate"
+                    title={entry.isDirectory ? `Open ${entry.name}` : `${entry.name} (${formatBytes(entry.size)})`}
                     onClick={() => (entry.isDirectory ? loadVpsPath(entry.path) : openRemoteFile(entry.path))}
                   >
                     {entry.isDirectory ? '📁' : '📄'} {entry.name}
                   </button>
-                  <button type="button" onClick={() => deleteRemotePath(entry.path)} className="text-red-600">🗑</button>
+                  {!entry.isDirectory && (
+                    <button type="button" onClick={() => downloadVpsFile(entry.path)} className="opacity-60 hover:opacity-100" title="Download">⬇</button>
+                  )}
+                  <button type="button" onClick={() => renameRemotePath(entry.path, entry.isDirectory)} className="opacity-60 hover:opacity-100" title="Rename">✏️</button>
+                  <button type="button" onClick={() => { if (window.confirm(`Delete "${entry.name}"?${entry.isDirectory ? ' This removes the folder and all its contents.' : ''} This cannot be undone.`)) deleteRemotePath(entry.path); }} className="text-red-600 opacity-70 hover:opacity-100" title="Delete">🗑</button>
                 </div>
               ))}
             </div>
 
             <div className="space-y-1">
-              <input placeholder="/path/file.conf" value={vpsSelectedFile} onChange={(e) => setVpsSelectedFile(e.target.value)} className="border rounded px-2 py-1 w-full" />
-              <textarea value={vpsFileContent} onChange={(e) => setVpsFileContent(e.target.value)} className="border rounded px-2 py-1 w-full min-h-48 font-mono text-[11px]" />
-              <div className="flex gap-2">
-                <button type="button" onClick={saveRemoteFile} className="bg-green-600 text-white rounded px-2 py-1">Save / Create</button>
-                <button type="button" onClick={() => deleteRemotePath(vpsSelectedFile)} className="bg-red-600 text-white rounded px-2 py-1">Remove</button>
+              <input placeholder="/path/file.conf" value={vpsSelectedFile} onChange={(e) => { setVpsSelectedFile(e.target.value); setVpsFileBinary(false); }} className="border rounded px-2 py-1 w-full" />
+              {vpsFileBinary && <p className="text-amber-600 text-[11px]">Binary file detected — editing disabled. Use Download to fetch it.</p>}
+              <textarea value={vpsFileContent} disabled={vpsFileBinary} onChange={(e) => setVpsFileContent(e.target.value)} className="border rounded px-2 py-1 w-full min-h-48 font-mono text-[11px] disabled:bg-gray-100 disabled:text-gray-400" />
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={saveRemoteFile} disabled={vpsFileBinary} className="bg-green-600 disabled:opacity-50 text-white rounded px-2 py-1">Save / Create</button>
+                {vpsSelectedFile && <button type="button" onClick={() => downloadVpsFile(vpsSelectedFile)} className="bg-blue-600 text-white rounded px-2 py-1">Download</button>}
+                <button type="button" onClick={() => { if (vpsSelectedFile && window.confirm(`Delete ${vpsSelectedFile}? This cannot be undone.`)) deleteRemotePath(vpsSelectedFile); }} className="bg-red-600 text-white rounded px-2 py-1">Remove</button>
                 <button type="button" onClick={async () => {
                   const dirName = window.prompt('Enter the directory path to create', `${vpsPath}/new-directory`);
                   if (!dirName) return;
@@ -1067,28 +1363,59 @@ export default function Home({ vpsDefaults = {} }) {
       {vpsTerminalOpen && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className="bg-white text-black rounded w-11/12 max-w-5xl max-h-[90vh] p-4 flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold">Terminal VPS</h2>
-              <button type="button" onClick={() => setVpsTerminalOpen(false)} className="bg-gray-700 text-white rounded px-3 py-1">Close</button>
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="font-semibold truncate" title={vpsTerminalCwd}>Terminal VPS — <span className="font-mono text-sm text-gray-600">{vpsTerminalCwd}</span></h2>
+              <div className="flex gap-2 shrink-0">
+                <button type="button" onClick={() => setVpsTerminalOutput('')} className="bg-gray-500 text-white rounded px-3 py-1">Clear</button>
+                <button type="button" onClick={() => setVpsTerminalOpen(false)} className="bg-gray-700 text-white rounded px-3 py-1">Close</button>
+              </div>
             </div>
             <div className="flex gap-2">
               <input
                 value={vpsTerminalCommand}
                 onChange={(e) => setVpsTerminalCommand(e.target.value)}
                 onKeyDown={async (e) => {
+                  const hist = vpsTerminalHistoryRef.current;
+                  if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (hist.length === 0) return;
+                    const idx = vpsTerminalHistoryIndexRef.current < 0 ? hist.length - 1 : Math.max(0, vpsTerminalHistoryIndexRef.current - 1);
+                    vpsTerminalHistoryIndexRef.current = idx;
+                    setVpsTerminalCommand(hist[idx]);
+                    return;
+                  }
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (vpsTerminalHistoryIndexRef.current < 0) return;
+                    const idx = vpsTerminalHistoryIndexRef.current + 1;
+                    if (idx >= hist.length) {
+                      vpsTerminalHistoryIndexRef.current = -1;
+                      setVpsTerminalCommand('');
+                    } else {
+                      vpsTerminalHistoryIndexRef.current = idx;
+                      setVpsTerminalCommand(hist[idx]);
+                    }
+                    return;
+                  }
                   if (e.key !== 'Enter' || !vpsTerminalCommand.trim()) return;
                   e.preventDefault();
-                  await runVpsCommand(vpsTerminalCommand, true);
+                  const cmd = vpsTerminalCommand;
+                  vpsTerminalHistoryRef.current = [...hist.filter((c) => c !== cmd), cmd];
+                  vpsTerminalHistoryIndexRef.current = -1;
+                  await runVpsCommand(cmd, true);
                   setVpsTerminalCommand('');
                 }}
-                placeholder="Type a command"
+                placeholder="Type a command (↑/↓ for history)"
                 className="border rounded px-2 py-1 flex-1 font-mono"
               />
               <button
                 type="button"
                 onClick={async () => {
                   if (!vpsTerminalCommand.trim()) return;
-                  await runVpsCommand(vpsTerminalCommand, true);
+                  const cmd = vpsTerminalCommand;
+                  vpsTerminalHistoryRef.current = [...vpsTerminalHistoryRef.current.filter((c) => c !== cmd), cmd];
+                  vpsTerminalHistoryIndexRef.current = -1;
+                  await runVpsCommand(cmd, true);
                   setVpsTerminalCommand('');
                 }}
                 className="bg-blue-700 text-white rounded px-3 py-1"

@@ -2,6 +2,15 @@ import fs from 'fs';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../auth/[...nextauth]';
 
+// File upload/download travels as base64 JSON through this proxy, so the default
+// 1mb request / 4mb response caps are too small. Allow a comfortable margin.
+export const config = {
+  api: {
+    bodyParser: { sizeLimit: '32mb' },
+    responseLimit: '48mb',
+  },
+};
+
 export default async function handler(req, res) {
   const session = await getServerSession(req, res, authOptions);
   if (!session) {
