@@ -21,3 +21,6 @@ frontend/.env
 frontend/.env.local
 frontend/.env.*.local
 
+# Local tooling artifacts (e.g. frontend-review screenshots — may show infra)
+.claude/
+
