@@ -12,9 +12,14 @@ It helps you see, organize, and control Docker containers running on your VPS.
 - 🐳 View all containers in one place
 - 📦 Group containers by application/repository
 - 🔗 Show GitHub repo link, branch, and commit for each app
-- 🔄 Restart/stop containers quickly
+- 🔄 Restart/stop containers quickly, pull branches and deploy with `compose up`
 - 📜 Read logs in the browser
 - 📊 See per-application resource share
+- 🖥️ **System tab**: host CPU load, memory, disk, uptime and Docker disk usage
+  (images / volumes / build-cache sizes) — see what's actually eating space
+- 🔐 **VPS tab (SFTP + SSH)**: browse the filesystem, edit text files, **upload**
+  and **download** files, rename, create/delete folders, and run commands (with a
+  mini-terminal that remembers command history)
 
 Great for personal servers, homelabs, and small production VPS deployments.
 
@@ -35,11 +40,20 @@ cd dumb-docker
 
 ### 2) Create root `.env` (same directory as `docker-compose.yml`)
 
+Copy the template and fill it in (the real `.env` is gitignored so secrets stay out of git):
+
 ```bash
-cat > .env <<EOF
-FRONTEND_PORT=3000
-BACKEND_PORT=8000
-EOF
+cp .env.example .env
+```
+
+At minimum set `FRONTEND_PORT`, `BACKEND_PORT`, a strong `NEXTAUTH_SECRET`, and
+**an admin credential** (`ADMIN_USERNAME` + `ADMIN_PASSWORD_SHA256`) — without a
+configured password the login screen rejects every attempt, so the dashboard
+stays unreachable. Generate the pieces with:
+
+```bash
+openssl rand -base64 32                          # NEXTAUTH_SECRET
+printf '%s' 'your-admin-password' | sha256sum    # ADMIN_PASSWORD_SHA256
 ```
 
 You can also keep your auth + VPS defaults in this same root `.env` (recommended when running with Docker Compose).
@@ -185,11 +199,31 @@ You can override with env vars:
 
 Existing container endpoints remain available.
 
-New endpoints:
+Applications:
 
 - `GET /api/applications`
 - `GET /api/applications/:id`
 - `GET /api/applications/:id/git-status`
+- `GET /api/applications/:id/branches`
+- `POST /api/applications/:id/pull`
+- `POST /api/applications/:id/compose`
+
+Host system:
+
+- `GET /api/system/overview` — CPU load, memory, disk, uptime, and Docker disk usage
+
+VPS (SFTP + SSH) — all `POST`, take the connection fields in the body:
+
+- `/api/vps/test-connection`
+- `/api/vps/list-files`, `/api/vps/read-file`, `/api/vps/write-file`
+- `/api/vps/upload-file` (base64), `/api/vps/download-file` (base64)
+- `/api/vps/rename-path`, `/api/vps/create-directory`, `/api/vps/delete-path` (recursive)
+- `/api/vps/run-command`
+
+All `/api/*` routes require an authenticated dashboard session. The backend
+itself is **not** published to the host — the frontend reaches it over the
+internal Docker network only. SSH auth supports passwords and Ed25519 / ECDSA /
+RSA / DSS private keys (with an optional passphrase).
 
 ## Notes
 
