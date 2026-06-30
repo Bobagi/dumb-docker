@@ -1,7 +1,11 @@
 import asyncio
+import base64
 import logging
+import os
 import shlex
+import shutil
 import stat
+from datetime import datetime, timezone
 from io import StringIO
 from pathlib import Path
 from typing import Optional
@@ -55,6 +59,7 @@ class VpsConnectionPayload(BaseModel):
     port: int = 22
     password: Optional[str] = None
     private_key: Optional[str] = None
+    private_key_passphrase: Optional[str] = None
 
 
 class VpsListFilesPayload(VpsConnectionPayload):
@@ -83,6 +88,41 @@ class VpsRunCommandPayload(VpsConnectionPayload):
     cwd: Optional[str] = None
 
 
+class VpsUploadFilePayload(VpsConnectionPayload):
+    path: str  # destination directory
+    filename: str
+    content_base64: str
+
+
+class VpsDownloadFilePayload(VpsConnectionPayload):
+    path: str
+
+
+class VpsRenamePayload(VpsConnectionPayload):
+    path: str
+    new_path: str
+
+
+def _load_private_key(key_str: str, passphrase: Optional[str] = None):
+    # Try every key type paramiko supports so Ed25519/ECDSA keys work, not just RSA.
+    key_buffer = key_str.strip() + "\n"
+    errors = []
+    for key_class in (paramiko.Ed25519Key, paramiko.ECDSAKey, paramiko.RSAKey, paramiko.DSSKey):
+        try:
+            return key_class.from_private_key(StringIO(key_buffer), password=passphrase or None)
+        except paramiko.PasswordRequiredException as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="Private key is encrypted: provide its passphrase.",
+            ) from exc
+        except Exception as exc:  # wrong key type or parse error — try the next class
+            errors.append(f"{key_class.__name__}: {exc}")
+    raise HTTPException(
+        status_code=400,
+        detail="Unsupported or invalid private key. Tried: " + "; ".join(errors),
+    )
+
+
 def _open_vps_ssh_client(payload: VpsConnectionPayload) -> paramiko.SSHClient:
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -92,11 +132,12 @@ def _open_vps_ssh_client(payload: VpsConnectionPayload) -> paramiko.SSHClient:
         "port": payload.port,
         "username": payload.username,
         "timeout": 15,
+        "allow_agent": False,
+        "look_for_keys": False,
     }
 
     if payload.private_key:
-        private_key = paramiko.RSAKey.from_private_key(StringIO(payload.private_key))
-        connect_kwargs["pkey"] = private_key
+        connect_kwargs["pkey"] = _load_private_key(payload.private_key, payload.private_key_passphrase)
     else:
         connect_kwargs["password"] = payload.password
 
@@ -104,7 +145,20 @@ def _open_vps_ssh_client(payload: VpsConnectionPayload) -> paramiko.SSHClient:
     return ssh
 
 
+def _sftp_rmtree(sftp, path: str) -> None:
+    # SFTP rmdir only removes empty dirs; recurse so deleting a folder actually works.
+    for entry in sftp.listdir_attr(path):
+        child = f"{path.rstrip('/')}/{entry.filename}"
+        if stat.S_ISDIR(entry.st_mode):
+            _sftp_rmtree(sftp, child)
+        else:
+            sftp.remove(child)
+    sftp.rmdir(path)
+
+
 def _sftp_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, HTTPException):
+        return exc
     return HTTPException(status_code=400, detail=str(exc))
 
 
@@ -352,7 +406,7 @@ async def vps_write_file(payload: VpsWriteFilePayload):
         ssh = await asyncio.to_thread(_open_vps_ssh_client, payload)
         sftp = ssh.open_sftp()
         with sftp.open(payload.path, "w") as remote_file:
-            remote_file.write(payload.content)
+            remote_file.write(payload.content.encode("utf-8"))
         sftp.close()
         ssh.close()
         return {"ok": True, "path": payload.path}
@@ -367,7 +421,7 @@ async def vps_delete_path(payload: VpsDeletePathPayload):
         sftp = ssh.open_sftp()
         mode = sftp.stat(payload.path).st_mode
         if stat.S_ISDIR(mode):
-            sftp.rmdir(payload.path)
+            await asyncio.to_thread(_sftp_rmtree, sftp, payload.path)
         else:
             sftp.remove(payload.path)
         sftp.close()
@@ -429,3 +483,199 @@ async def vps_run_command(payload: VpsRunCommandPayload):
         }
     except Exception as exc:
         raise _sftp_error(exc) from exc
+
+
+@app.post("/api/vps/test-connection")
+async def vps_test_connection(payload: VpsConnectionPayload):
+    def _do_test():
+        ssh = _open_vps_ssh_client(payload)
+        try:
+            _, stdout, _ = ssh.exec_command("whoami; uname -srm", timeout=15)
+            stdout.channel.recv_exit_status()
+            lines = stdout.read().decode("utf-8", errors="ignore").strip().splitlines()
+            who = lines[0].strip() if lines else payload.username
+            info = lines[1].strip() if len(lines) > 1 else ""
+            return who, info
+        finally:
+            ssh.close()
+
+    try:
+        who, info = await asyncio.to_thread(_do_test)
+        return {"ok": True, "user": who, "host": payload.host, "info": info}
+    except Exception as exc:
+        raise _sftp_error(exc) from exc
+
+
+@app.post("/api/vps/upload-file")
+async def vps_upload_file(payload: VpsUploadFilePayload):
+    try:
+        raw = base64.b64decode(payload.content_base64)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid file data: {exc}") from exc
+
+    filename = Path(payload.filename).name  # strip any path component for safety
+    if not filename:
+        raise HTTPException(status_code=400, detail="Filename is required")
+
+    directory = payload.path or "."
+    if directory == "/":
+        remote_path = f"/{filename}"
+    elif directory in ("", "."):
+        remote_path = filename
+    else:
+        remote_path = f"{directory.rstrip('/')}/{filename}"
+
+    def _do_upload():
+        ssh = _open_vps_ssh_client(payload)
+        try:
+            sftp = ssh.open_sftp()
+            with sftp.open(remote_path, "w") as remote_file:
+                remote_file.write(raw)
+            sftp.close()
+        finally:
+            ssh.close()
+
+    try:
+        await asyncio.to_thread(_do_upload)
+        return {"ok": True, "path": remote_path, "size": len(raw)}
+    except Exception as exc:
+        raise _sftp_error(exc) from exc
+
+
+@app.post("/api/vps/download-file")
+async def vps_download_file(payload: VpsDownloadFilePayload):
+    def _do_download():
+        ssh = _open_vps_ssh_client(payload)
+        try:
+            sftp = ssh.open_sftp()
+            file_stat = sftp.stat(payload.path)
+            if stat.S_ISDIR(file_stat.st_mode):
+                raise HTTPException(status_code=400, detail="Path is a directory, not a file")
+            with sftp.open(payload.path, "rb") as remote_file:
+                data = remote_file.read()
+            sftp.close()
+            return data
+        finally:
+            ssh.close()
+
+    try:
+        data = await asyncio.to_thread(_do_download)
+        return {
+            "path": payload.path,
+            "filename": Path(payload.path).name,
+            "size": len(data),
+            "content_base64": base64.b64encode(data).decode("ascii"),
+        }
+    except Exception as exc:
+        raise _sftp_error(exc) from exc
+
+
+@app.post("/api/vps/rename-path")
+async def vps_rename_path(payload: VpsRenamePayload):
+    if not payload.new_path:
+        raise HTTPException(status_code=400, detail="New path is required")
+
+    def _do_rename():
+        ssh = _open_vps_ssh_client(payload)
+        try:
+            sftp = ssh.open_sftp()
+            try:
+                sftp.posix_rename(payload.path, payload.new_path)
+            except (IOError, OSError):
+                sftp.rename(payload.path, payload.new_path)
+            sftp.close()
+        finally:
+            ssh.close()
+
+    try:
+        await asyncio.to_thread(_do_rename)
+        return {"ok": True, "path": payload.new_path}
+    except Exception as exc:
+        raise _sftp_error(exc) from exc
+
+
+def _read_meminfo() -> dict:
+    info = {}
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            key, _, rest = line.partition(":")
+            parts = rest.strip().split()
+            if parts:
+                info[key] = int(parts[0]) * 1024  # kB -> bytes
+    except (OSError, ValueError):
+        return {}
+    total = info.get("MemTotal", 0)
+    available = info.get("MemAvailable", info.get("MemFree", 0))
+    return {
+        "total": total,
+        "available": available,
+        "used": max(0, total - available),
+        "usedPercent": round((total - available) / total * 100, 1) if total else 0.0,
+    }
+
+
+def _read_disk(path: str = "/opt") -> dict:
+    for candidate in (path, "/"):
+        try:
+            usage = shutil.disk_usage(candidate)
+        except OSError:
+            continue
+        return {
+            "path": candidate,
+            "total": usage.total,
+            "used": usage.used,
+            "free": usage.free,
+            "usedPercent": round(usage.used / usage.total * 100, 1) if usage.total else 0.0,
+        }
+    return {}
+
+
+def _read_uptime() -> Optional[float]:
+    try:
+        return float(Path("/proc/uptime").read_text().split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def _collect_docker_df() -> dict:
+    try:
+        df = client.df()
+    except Exception:
+        return {}
+    images = df.get("Images") or []
+    containers = df.get("Containers") or []
+    volumes = df.get("Volumes") or []
+    build_cache = df.get("BuildCache") or []
+    layers_size = df.get("LayersSize") or sum(int(i.get("Size") or 0) for i in images)
+    return {
+        "images": len(images),
+        "imagesSize": int(layers_size or 0),
+        "containers": len(containers),
+        "containersRunning": sum(1 for c in containers if str(c.get("State")) == "running"),
+        "volumes": len(volumes),
+        "volumesSize": sum(int((v.get("UsageData") or {}).get("Size") or 0) for v in volumes),
+        "buildCacheSize": sum(int(b.get("Size") or 0) for b in build_cache),
+    }
+
+
+@app.get("/api/system/overview")
+async def system_overview():
+    def _collect():
+        load1 = load5 = load15 = None
+        try:
+            load1, load5, load15 = os.getloadavg()
+        except (OSError, AttributeError):
+            pass
+        return {
+            "cpuCount": os.cpu_count() or 1,
+            "loadAverage": {"1m": load1, "5m": load5, "15m": load15},
+            "memory": _read_meminfo(),
+            "disk": _read_disk("/opt"),
+            "uptimeSeconds": _read_uptime(),
+            "docker": _collect_docker_df(),
+            "scanPaths": app_config.scan_paths,
+            "scanIntervalSeconds": app_config.scan_interval_seconds,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    return await asyncio.to_thread(_collect)

@@ -6,9 +6,21 @@ __pycache__/
 frontend/node_modules
 frontend/.next
 frontend/package-lock.json
+frontend/pnpm-lock.yaml
 backend/node_modules
 backend/package-lock.json
 
 # Build outputs
 frontend/build
+
+# Env / secrets (never commit real values — use the *.example files)
+.env
+.env.local
+.env.*.local
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+# Local tooling artifacts (e.g. frontend-review screenshots — may show infra)
+.claude/
 

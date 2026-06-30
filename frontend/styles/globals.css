@@ -30,3 +30,16 @@ body {
 .react-flow__node {
   cursor: default !important;
 }
+
+button,
+a,
+[role='button'],
+input[type='button'],
+input[type='submit'] {
+  cursor: pointer;
+}
+
+button:disabled,
+input:disabled {
+  cursor: not-allowed;
+}
